@@ -3,10 +3,6 @@ package main
 import (
 	"crypto/sha1"
 	"math/big"
-	"net"
-	"net/http"
-	"net/rpc"
-	"strconv"
 )
 
 type Key string
@@ -19,28 +15,19 @@ type Node struct {
 	Successors  []NodeAddress
 
 	Bucket map[Key]string
-
-	port string
 }
 
-func (n *Node) server() {
-
-	rpc.Register(n)
-	rpc.HandleHTTP()
-	l, err := net.Listen("tcp", n.port)
-	if err != nil {
-		panic("Error starting RPC")
+func (n *Node) HandlePing(arguments *Args, reply *Reply) error {
+	if arguments.Command == "Ping" {
+		reply.Reply = "Ping reply"
 	}
-
-	go http.Serve(l, nil)
-
+	return nil
 }
 
-func NewNode(Address string, port string) *Node {
+func NewNode(Address string) *Node {
 
-	node := Node{NodeAddress(Address), []NodeAddress{}, "", []NodeAddress{}, make(map[Key]string), port}
+	node := Node{NodeAddress(Address), []NodeAddress{}, "", []NodeAddress{}, make(map[Key]string)}
 
-	node.server()
 	return &node
 
 }
@@ -52,10 +39,6 @@ func hashString(elt string) *big.Int {
 
 	return new(big.Int).SetBytes(hasher.Sum(nil))
 
-}
-
-func (n *Node) setPort(port int) {
-	n.port = ":" + strconv.Itoa(port)
 }
 
 func (n *Node) jump() {
@@ -111,11 +94,4 @@ func run() {
 	// define request and reply structs
 	// handle requests appropriatley
 
-}
-
-//RPC call
-// define request and reply interfaces in a separate RPC file
-func call(address string, method string, request interface{}, reply interface{}) error {
-
-	return nil
 }
