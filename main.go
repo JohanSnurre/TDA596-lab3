@@ -1,86 +1,83 @@
 package main
 
 import (
-	"crypto/sha1"
-	"math/big"
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
 )
 
-type Key string
-type NodeAddress string
-
-type Node struct {
-	Address     NodeAddress
-	FingerTable []NodeAddress
-	Predecessor NodeAddress
-	Successors  []NodeAddress
-
-	Bucket map[Key]string
-}
+var flag bool
 
 func main() {
+
+	res := bufio.NewReader(os.Stdin)
+	var s string
+	flag = true
+
+	m := make(map[string]func([]string))
+	m["help"] = help
+	m["quit"] = quit
+	m["port"] = port
+	for flag {
+
+		fmt.Print("::> ")
+		s, _ = res.ReadString('\n')
+
+		s = strings.TrimSpace(s)
+		args := strings.Split(s, " ")
+		fmt.Println("This is your text: ", s)
+
+		f, ok := m[args[0]]
+		if ok {
+			f(args)
+		}
+
+	}
 
 	return
 }
 
-func hashString(elt string) *big.Int {
+func help(args []string) {
+	fmt.Print("Help arrived!\n")
+}
 
-	hasher := sha1.New()
-	hasher.Write([]byte(elt))
+func quit(args []string) {
+	flag = false
+	fmt.Print("Quitting!\n")
+}
 
-	return new(big.Int).SetBytes(hasher.Sum(nil))
+func port(args []string) {
+	if len(args) < 2 {
+		fmt.Println("Not enough arguments for port!")
+	}
+	fmt.Println(args[1])
+}
+
+func create(args []string) {
 
 }
 
-func jump() {
+func join(args []string) {
 
 }
 
-func between() {
+func put(args []string) {
 
 }
 
-func getLocalAddress() {
+func putrandom(args []string) {
 
 }
 
-func findSuccessor() {
+func get(args []string) {
 
 }
 
-func create() {
+func delete(args []string) {
 
 }
 
-func join() {
+func dump(args []string) {
 
-}
-
-func stabilize() {
-
-}
-
-func notify() {
-
-}
-
-func fix_fingers() {
-
-}
-
-func checkPredecessor() {
-
-}
-
-func run() {
-
-	//start an RPC server over http
-	// define request and reply structs
-	// handle requests appropriatley
-
-}
-
-//RPC call
-func call() error {
-
-	return nil
 }
