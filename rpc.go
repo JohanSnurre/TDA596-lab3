@@ -2,8 +2,11 @@ package main
 
 type Args struct {
 	Command string
+	Address string
 }
 
 type Reply struct {
-	Reply string
+	Found   bool
+	Reply   string
+	Forward string
 }
