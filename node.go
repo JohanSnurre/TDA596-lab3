@@ -2,13 +2,16 @@ package main
 
 import (
 	"crypto/sha1"
+	"fmt"
 	"math/big"
+	"sync"
 )
 
 type Key string
 type NodeAddress string
 
 type Node struct {
+	mu          sync.Mutex
 	Address     NodeAddress
 	FingerTable []NodeAddress
 	Predecessor NodeAddress
@@ -18,19 +21,22 @@ type Node struct {
 }
 
 func (n *Node) HandlePing(arguments *Args, reply *Reply) error {
-	if arguments.Command == "Ping" {
-		reply.Reply = "Ping reply"
+	n.mu.Lock()
+	//fmt.Println("In HandlePing")
+	if arguments.Command == "CP" {
+		reply.Reply = "CP reply"
 	}
+	n.mu.Unlock()
 	return nil
 }
 
-func NewNode(Address string) *Node {
+/*func NewNode(Address string) *Node {
 
 	node := Node{NodeAddress(Address), []NodeAddress{}, "", []NodeAddress{}, make(map[Key]string)}
 
 	return &node
 
-}
+}*/
 
 func between(start *big.Int, elt *big.Int, end *big.Int, inclusive bool) bool {
 
@@ -43,13 +49,16 @@ func between(start *big.Int, elt *big.Int, end *big.Int, inclusive bool) bool {
 }
 
 func (n *Node) Get_predecessor(args *Args, reply *Reply) error {
-
+	n.mu.Lock()
 	reply.Reply = string(node.Predecessor)
+	n.mu.Unlock()
 	return nil
 
 }
 
 func (n *Node) Find_successor(args *Args, reply *Reply) error {
+
+	n.mu.Lock()
 
 	addressH := hashAddress(NodeAddress(args.Address))
 
@@ -59,7 +68,9 @@ func (n *Node) Find_successor(args *Args, reply *Reply) error {
 
 	if between(addH, addressH, succH, true) {
 		reply.Found = true
-		reply.Reply = string(n.Successors[0])
+		reply.Reply = string(node.Address)
+		reply.Successors = n.Successors
+		fmt.Println(n.Successors)
 		reply.Forward = ""
 	} else {
 		reply.Found = false
@@ -67,7 +78,7 @@ func (n *Node) Find_successor(args *Args, reply *Reply) error {
 		reply.Forward = string(n.Successors[0])
 		//fmt.Println(reply.Reply)
 	}
-
+	n.mu.Unlock()
 	return nil
 }
 
@@ -107,21 +118,30 @@ func (n *Node) findSuccessor(m *Node) NodeAddress {
 
 }
 
+func (n *Node) Get_successors(args *Args, reply *Reply) error {
+
+	n.mu.Lock()
+	reply.Successors = node.Successors
+	n.mu.Unlock()
+	return nil
+
+}
+
 func (n *Node) create() {
 
+	n.mu.Lock()
 	n.Predecessor = ""
 	n.Successors = append(n.Successors, n.Address)
-
-	/*
-		Create a new ring if none already exist
-		return error if a ring already exists
-
-
-	*/
+	n.mu.Unlock()
 
 }
 
 func (n *Node) join(address NodeAddress) {
+	n.mu.Lock()
+	node.Predecessor = ""
+	node.Successors = []NodeAddress{address}
+
+	n.mu.Unlock()
 
 }
 
@@ -131,6 +151,7 @@ func (n *Node) stabilize() {
 
 func (n *Node) Notify(args *Args, reply *Reply) error {
 
+	n.mu.Lock()
 	addH := hashAddress(NodeAddress(args.Address))
 
 	addressH := hashAddress(n.Address)
@@ -143,7 +164,7 @@ func (n *Node) Notify(args *Args, reply *Reply) error {
 	} else {
 		reply.Reply = "Fail"
 	}
-
+	n.mu.Unlock()
 	return nil
 }
 

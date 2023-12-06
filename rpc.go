@@ -6,7 +6,8 @@ type Args struct {
 }
 
 type Reply struct {
-	Found   bool
-	Reply   string
-	Forward string
+	Found      bool
+	Reply      string
+	Forward    string
+	Successors []NodeAddress
 }

@@ -19,17 +19,27 @@ var localPort string
 var node *Node
 var add NodeAddress
 
+var address *string
+var addressPort *int
+var joinAddress *string
+var joinPort *int
+var timeStablize *int
+var timeFixFingers *int
+var timeCheckPredecessor *int
+var successorAmount *int
+var identifier *string
+
 func main() {
 
-	address := flag.String("a", "", "Address")
-	addressPort := flag.Int("p", -1, "Port")
-	joinAddress := flag.String("ja", "", "Join address")
-	joinPort := flag.Int("jp", -1, "Join port")
-	timeStablize := flag.Int("ts", -1, "Time before stabilize call")
-	timeFixFingers := flag.Int("tff", -1, "Time before fix fingers call")
-	timeCheckPredecessor := flag.Int("tcp", -1, "Time before check predecessor is called")
-	//successorAmount := flag.Int("r", -1, "The amount of immediate successor stored")
-	identifier := flag.String("i", "", "The string identifier of a node")
+	address = flag.String("a", "", "Address")
+	addressPort = flag.Int("p", -1, "Port")
+	joinAddress = flag.String("ja", "", "Join address")
+	joinPort = flag.Int("jp", -1, "Join port")
+	timeStablize = flag.Int("ts", -1, "Time before stabilize call")
+	timeFixFingers = flag.Int("tff", -1, "Time before fix fingers call")
+	timeCheckPredecessor = flag.Int("tcp", -1, "Time before check predecessor is called")
+	successorAmount = flag.Int("r", -1, "The amount of immediate successor stored")
+	identifier = flag.String("i", "", "The string identifier of a node")
 
 	flag.Parse()
 	*address = strings.TrimSpace(*address)
@@ -50,7 +60,7 @@ func main() {
 	}
 
 	add = NodeAddress(*address + localPort)
-	node = &Node{NodeAddress(add), []NodeAddress{}, "", []NodeAddress{}, make(map[Key]string)}
+	node = &Node{Address: NodeAddress(add), Successors: []NodeAddress{}, Predecessor: "", FingerTable: []NodeAddress{}, Bucket: make(map[Key]string)}
 
 	server(*address, ":"+strconv.Itoa(*addressPort))
 
@@ -71,7 +81,7 @@ func main() {
 
 	}
 
-	//go loopCP(time.Duration(*timeCheckPredecessor))
+	go loopCP(time.Duration(*timeCheckPredecessor))
 	go loopStab(time.Duration(*timeStablize))
 
 	res := bufio.NewReader(os.Stdin)
@@ -89,6 +99,7 @@ func main() {
 	m["notify"] = notify
 	m["stab"] = stabilize
 	m["cp"] = cp
+	m["c"] = c
 	for running {
 
 		fmt.Print("::> ")
@@ -141,37 +152,92 @@ func quit(args []string) {
 }
 
 func cp(args []string) {
+
 	arguments := Args{"CP", string(node.Address)}
 	reply := Reply{}
 
+	if string(node.Predecessor) == "" {
+		return
+	}
+
 	ok := call(string(node.Predecessor), "Node.HandlePing", &arguments, &reply)
 	if !ok {
-		node.Predecessor = ""
+		node.mu.Lock()
+		fmt.Println("Can not connect to predecessor")
+		node.Predecessor = NodeAddress("")
+		node.mu.Unlock()
 		return
 	}
 
 }
 
+func c(args []string) {
+	node.Predecessor = ""
+}
+
 func stabilize(args []string) {
 
-	arguments := Args{"Stabilize", string(node.Address)}
+	arguments := Args{"", string(node.Address)}
 	reply := Reply{}
 
-	call(string(node.Successors[0]), "Node.Get_predecessor", &arguments, &reply)
-
+	ok := call(string(node.Successors[0]), "Node.Get_predecessor", &arguments, &reply)
+	if !ok {
+		fmt.Println("Could not connect to successor")
+		dump([]string{})
+		node.mu.Lock()
+		node.Successors = node.Successors[1:]
+		node.mu.Unlock()
+		return
+	}
+	node.mu.Lock()
 	addH := hashAddress(node.Address)
 	addressH := hashAddress(NodeAddress(reply.Reply))
 	succH := hashAddress(node.Successors[0])
 
+	/*
+
+		1. Ask successor for their predecessor
+		2. See if the predecessor is within the range(self, successor)
+		3. If it is within range, self.sucessor = sucessor.predecessor
+		4. Ask sucessor for their sucessor table
+		5. Append the successor table onto self.successor table.
+		6. If the table exceeds size r, remove the last element
+
+
+	*/
+
 	if between(addH, addressH, succH, false) && reply.Reply != "" {
-		/*fmt.Println(addH)
-		fmt.Println(addressH)
-		fmt.Println(succH)
-		fmt.Println(between(addH, addressH, succH, false))
-		*/
+
+		//fmt.Println(addH)
+		//fmt.Println(addressH)
+		//fmt.Println(succH)
+		//fmt.Println(between(addH, addressH, succH, false))
+
+		//node.Successors = []NodeAddress{NodeAddress(reply.Reply)}
+		//fmt.Println(reply.Successors)
 		node.Successors = []NodeAddress{NodeAddress(reply.Reply)}
+		//node.Successors = append(node.Successors, reply.Successors...)
 
 	}
+
+	node.mu.Unlock()
+	arguments = Args{"", string(node.Address)}
+	reply = Reply{}
+	ok = call(string(node.Successors[0]), "Node.Get_successors", &arguments, &reply)
+	if !ok {
+		//fmt.Println("Call failed to successor in stabilize <2>")
+	}
+	node.mu.Lock()
+	//fmt.Println(reply.Successors)
+	node.Successors = []NodeAddress{node.Successors[0]}
+	node.Successors = append(node.Successors, reply.Successors[:len(reply.Successors)]...)
+	if len(node.Successors) > *successorAmount {
+		node.Successors = node.Successors[:*successorAmount]
+	}
+	node.mu.Unlock()
+
+	//dump([]string{})
+
 	arguments = Args{"Stabilize", string(node.Address)}
 	reply = Reply{}
 	notify([]string{})
@@ -179,11 +245,23 @@ func stabilize(args []string) {
 }
 
 func notify(args []string) {
+
 	arguments := Args{"Notify", string(node.Address)}
 	reply := Reply{}
 
-	call(string(node.Successors[0]), "Node.Notify", &arguments, &reply)
+	ok := call(string(node.Successors[0]), "Node.Notify", &arguments, &reply)
+	if !ok {
+		//fmt.Println("Call failed in notify")
+	}
 
+	/*
+		arguments := Args{"Notify", string(node.Address)}
+		reply := Reply{}
+
+		mu.Lock()
+		call(string(node.Successors[0]), "Node.Notify", &arguments, &reply)
+		mu.Unlock()
+	*/
 	//fmt.Println(reply.Reply)
 }
 
@@ -220,32 +298,12 @@ func create(args []string) {
 		return
 	}
 
-	node.Predecessor = ""
-	node.Successors = append(node.Successors, node.Address)
+	node.create()
+
 	//notify([]string{})
 }
 
-func call(address string, method string, args interface{}, reply interface{}) bool {
-	c, err := rpc.DialHTTP("tcp", address)
-	if err != nil {
-		//fmt.Println("Could not connect, return false")
-		return false
-	}
-	defer c.Close()
-
-	err = c.Call(method, args, reply)
-	if err == nil {
-		return true
-	}
-
-	fmt.Println(err)
-	return false
-
-}
-
 func join(address NodeAddress) {
-
-	node.Predecessor = ""
 
 	reply := Reply{}
 	args := Args{"", string(node.Address)}
@@ -261,9 +319,8 @@ func join(address NodeAddress) {
 
 		switch found := reply.Found; found {
 		case true:
-			node.Successors = []NodeAddress{NodeAddress(reply.Reply)}
+			node.join(NodeAddress(reply.Reply))
 			//fmt.Println("True")
-			fmt.Println("LEL")
 			flag = true
 			break
 		case false:
@@ -276,6 +333,29 @@ func join(address NodeAddress) {
 	}
 
 	//notify([]string{})
+}
+
+func call(address string, method string, args interface{}, reply interface{}) bool {
+
+	//then := time.Now().Nanosecond()
+	c, err := rpc.DialHTTP("tcp", address)
+	if err != nil {
+		//fmt.Println("Could not connect, return false")
+		return false
+	}
+	defer c.Close()
+
+	err = c.Call(method, args, reply)
+
+	//now := time.Now().Nanosecond()
+	//fmt.Println(now - then)
+	if err == nil {
+		return true
+	}
+
+	fmt.Println("CALL ERROR: ", err)
+	return false
+
 }
 
 func find_successor(id int) {
