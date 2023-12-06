@@ -1,79 +1,71 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
 	"os"
-	"strings"
+	"strconv"
 )
 
 var flag, created bool
 var addressPort string = ":3410"
 
 func main() {
+	mode := os.Args[1]
+	id, _ := strconv.Atoi(os.Args[2])
 
-	res := bufio.NewReader(os.Stdin)
-	var s string
-	flag = true
-	created = false
+	node := NewNode(id, 4)
 
-	m := make(map[string]func([]string))
-	m["help"] = help
-	m["quit"] = quit
-	m["port"] = port
-	m["create"] = create
-	m["ping"] = ping
-	for flag {
+	if mode == "c" {
+		create(node)
+		for {
 
-		fmt.Print("::> ")
-		s, _ = res.ReadString('\n')
+		}
+	} else { // join
+		//node.join()
+		handleJoin(node)
 
-		s = strings.TrimSpace(s)
-		args := strings.Split(s, " ")
+	}
+}
 
-		f, ok := m[args[0]]
-		if ok {
-			f(args)
+func handleJoin(node *Node) {
+	// find successor
+	reply := Reply{}
+	arguments := Args{"Ping", node.id}
+
+	found := false
+	nextNode, _ := strconv.Atoi(addressPort)
+
+	for {
+
+		call(addressPort, "Node.HandleFind", &arguments, &reply)
+		nextNode = reply.Successor
+		found = reply.FoundSucc
+
+		fmt.Println(nextNode)
+
+		if found {
+			break
 		}
 
 	}
+	succ := nextNode
+	fmt.Println("new succ is: " + strconv.Itoa(reply.Successor))
 
-	return
+	node.successors[0] = succ
 }
 
-func help(args []string) {
-	fmt.Print("Help arrived!\n")
-}
-
-func quit(args []string) {
-	flag = false
-	fmt.Print("Quitting!\n")
-}
-
-func port(args []string) {
-	if len(args) < 2 {
-		fmt.Println("Not enough arguments for port!")
-	}
+func create(node *Node) {
 	if created {
 		fmt.Println("Node already created")
 		return
 	}
 
-	addressPort = ":" + args[1]
-	fmt.Println(args[1])
-}
-
-func create(args []string) {
-	if created {
-		fmt.Println("Node already created")
-		return
-	}
-
-	node := NewNode(getLocalAddress())
+	//node := NewNode(getLocalAddress())
+	node.create()
 
 	rpc.Register(node)
 	rpc.HandleHTTP()
@@ -106,10 +98,6 @@ func call(address string, method string, args interface{}, reply interface{}) bo
 
 }
 
-func join(args []string) {
-
-}
-
 func put(args []string) {
 
 }
@@ -130,24 +118,23 @@ func dump(args []string) {
 
 }
 
-func ping(args []string) {
+// func ping() {
 
-	reply := Reply{}
-	arguments := Args{"Ping"}
+// 	reply := Reply{}
+// 	arguments := Args{"Ping", 9}
 
-	ok := call(args[1], "Node.HandlePing", &arguments, &reply)
-	if ok {
-		fmt.Printf("reply: %v\n", reply.Reply)
-	} else {
-		fmt.Printf("Call failed\n")
-	}
-	r := reply.Reply
-	fmt.Println(r)
-}
+// 	ok := call(addressPort, "Node.HandlePing", &arguments, &reply)
+// 	if ok {
+// 		fmt.Printf("reply: %v\n", reply.Reply)
+// 	} else {
+// 		fmt.Printf("Call failed\n")
+// 	}
+// 	r := reply.Reply
+// 	fmt.Println(r)
+// }
 
 func getLocalAddress() string {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
-	fmt.Println(conn.LocalAddr().(*net.UDPAddr).IP.String())
 	if err != nil {
 		log.Fatal(err)
 	}
