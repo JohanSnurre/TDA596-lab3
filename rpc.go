@@ -1,5 +1,7 @@
 package main
 
+import "math/big"
+
 type Args struct {
 	Command string
 	Address string
@@ -11,4 +13,12 @@ type Reply struct {
 	Reply      string
 	Forward    string
 	Successors []NodeAddress
+}
+
+type s struct {
+	ID *big.Int
+}
+
+type r struct {
+	Address NodeAddress
 }

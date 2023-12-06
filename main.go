@@ -84,7 +84,7 @@ func main() {
 
 	go loopCP(time.Duration(*timeCheckPredecessor))
 	go loopStab(time.Duration(*timeStablize))
-	go loopFF(time.Duration(*timeFixFingers))
+	//go loopFF(time.Duration(*timeFixFingers))
 
 	res := bufio.NewReader(os.Stdin)
 	var s string
@@ -98,10 +98,6 @@ func main() {
 	//m["create"] = create
 	//m["ping"] = ping
 	m["dump"] = dump
-	m["notify"] = notify
-	m["stab"] = stabilize
-	m["cp"] = cp
-	m["c"] = c
 	m["StoreFile"] = StoreFile
 	for running {
 
@@ -123,18 +119,40 @@ func main() {
 
 func StoreFile(args []string) {
 
+	filename := args[1]
+
+	reply := Reply{}
+	arguments := Args{"", filename, 0}
+
+	add := node.Address
+	flag := false
+
+	for !flag {
+		ok := call(string(add), "Node.FindSuccessor", &arguments, &reply)
+		if !ok {
+			fmt.Println("Failed to fix fingers")
+			return
+		}
+		switch found := reply.Found; found {
+
+		//if the file maps between self and successor then reply.Reply = node.Successor[0]
+		case true:
+
+			flag = true
+			break
+		//if the file maps somewhere else then we have to forward the request to a better node
+		case false:
+			add = NodeAddress(reply.Forward)
+			break
+		}
+
+	}
+
+	//Print out the correct address to store the file in. Dependent on hashString(filename)
+	fmt.Println(reply.Reply)
+
 	/*
-		filepath := args[1]
-		f := os.Open(filepath)
-
-		text := io.ReadAll(f)
-
-		id := hashString(f.name())
-
-
-
-		call()
-
+		Use the address and make an rpc connection to upload the file contents to that node
 
 	*/
 
@@ -159,7 +177,6 @@ func loopFF(t time.Duration) {
 func loopStab(t time.Duration) {
 
 	for {
-		//fmt.Println("LOL")
 		stabilize([]string{})
 		time.Sleep(t * time.Millisecond)
 
@@ -209,7 +226,6 @@ func fix_fingers() {
 	for next := 0; next < 10; next++ {
 
 		offset := int64(math.Pow(2, float64(next)))
-		//fmt.Println(offset)
 		add := node.Address
 		flag := false
 		for !flag {
@@ -217,7 +233,7 @@ func fix_fingers() {
 			reply := Reply{}
 			args := Args{"", string(node.Address), offset}
 
-			ok := call(string(add), "Node.Find_successor", &args, &reply)
+			ok := call(string(add), "Node.FindSuccessor", &args, &reply)
 			if !ok {
 				fmt.Println("Failed to fix fingers")
 				return
@@ -245,10 +261,6 @@ func fix_fingers() {
 
 }
 
-func c(args []string) {
-	node.Predecessor = ""
-}
-
 func stabilize(args []string) {
 
 	arguments := Args{"", string(node.Address), 0}
@@ -268,30 +280,8 @@ func stabilize(args []string) {
 	addressH := hashAddress(NodeAddress(reply.Reply))
 	succH := hashAddress(node.Successors[0])
 
-	/*
-
-		1. Ask successor for their predecessor
-		2. See if the predecessor is within the range(self, successor)
-		3. If it is within range, self.sucessor = sucessor.predecessor
-		4. Ask sucessor for their sucessor table
-		5. Append the successor table onto self.successor table.
-		6. If the table exceeds size r, remove the last element
-
-
-	*/
-
 	if between(addH, addressH, succH, false) && reply.Reply != "" {
-
-		//fmt.Println(addH)
-		//fmt.Println(addressH)
-		//fmt.Println(succH)
-		//fmt.Println(between(addH, addressH, succH, false))
-
-		//node.Successors = []NodeAddress{NodeAddress(reply.Reply)}
-		//fmt.Println(reply.Successors)
 		node.Successors = []NodeAddress{NodeAddress(reply.Reply)}
-		//node.Successors = append(node.Successors, reply.Successors...)
-
 	}
 
 	node.mu.Unlock()
@@ -310,8 +300,6 @@ func stabilize(args []string) {
 	}
 	node.mu.Unlock()
 
-	//dump([]string{})
-
 	arguments = Args{"Stabilize", string(node.Address), 0}
 	reply = Reply{}
 	notify([]string{})
@@ -328,28 +316,6 @@ func notify(args []string) {
 		//fmt.Println("Call failed in notify")
 	}
 
-	/*
-		arguments := Args{"Notify", string(node.Address)}
-		reply := Reply{}
-
-		mu.Lock()
-		call(string(node.Successors[0]), "Node.Notify", &arguments, &reply)
-		mu.Unlock()
-	*/
-	//fmt.Println(reply.Reply)
-}
-
-func port(args []string) {
-	if len(args) < 2 {
-		fmt.Println("Not enough arguments for port!")
-	}
-	if created {
-		fmt.Println("Node already created")
-		return
-	}
-
-	localPort = ":" + args[1]
-	fmt.Println(args[1])
 }
 
 func server(address string, port string) {
@@ -374,7 +340,6 @@ func create(args []string) {
 
 	node.create()
 
-	//notify([]string{})
 }
 
 func join(address NodeAddress) {
@@ -388,7 +353,7 @@ func join(address NodeAddress) {
 
 	for !flag {
 
-		call(string(add), "Node.Find_successor", &args, &reply)
+		call(string(add), "Node.FindSuccessor", &args, &reply)
 		//fmt.Println(reply.Reply)
 
 		switch found := reply.Found; found {
@@ -406,7 +371,6 @@ func join(address NodeAddress) {
 
 	}
 
-	//notify([]string{})
 }
 
 func call(address string, method string, args interface{}, reply interface{}) bool {
@@ -429,10 +393,6 @@ func call(address string, method string, args interface{}, reply interface{}) bo
 
 	fmt.Println("CALL ERROR: ", err)
 	return false
-
-}
-
-func find_successor(id int) {
 
 }
 
@@ -463,22 +423,6 @@ func dump(args []string) {
 	fmt.Print("Bucket: ")
 	fmt.Println(node.Bucket)
 
-}
-
-func ping(args []string) {
-
-	reply := Reply{}
-	arguments := Args{"Ping", "", 0}
-	fmt.Println(args[1])
-
-	ok := call(args[1], "Node.HandlePing", &arguments, &reply)
-	if ok {
-		fmt.Printf("reply: %v\n", reply.Reply)
-	} else {
-		fmt.Printf("Call failed\n")
-	}
-	r := reply.Reply
-	fmt.Println(r)
 }
 
 func getLocalAddress() string {

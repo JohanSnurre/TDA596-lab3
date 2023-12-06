@@ -55,6 +55,7 @@ func (n *Node) Get_predecessor(args *Args, reply *Reply) error {
 
 }
 
+/*
 func (n *Node) Find_successor(args *Args, reply *Reply) error {
 
 	n.mu.Lock()
@@ -80,7 +81,7 @@ func (n *Node) Find_successor(args *Args, reply *Reply) error {
 	n.mu.Unlock()
 	return nil
 }
-
+*/
 func (n *Node) closest_predecing_node(id *big.Int) NodeAddress {
 
 	for i := len(n.FingerTable) - 1; i >= 0; i-- {
@@ -133,18 +134,30 @@ func (n *Node) getLocalAddress() {
 
 }
 
-func (n *Node) findSuccessor(id *big.Int) (bool, NodeAddress) {
+func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 
+	n.mu.Lock()
 	addH := hashAddress(n.Address)
+
+	ID := hashAddress(NodeAddress(args.Address))
 
 	succH := hashAddress(NodeAddress(n.Successors[0]))
 
-	if between(addH, id, succH, true) {
-		return true, n.Successors[0]
+	//If the ID is between self and immediate successor
+	if between(addH, ID, succH, true) {
+		reply.Found = true
+		reply.Reply = string(n.Successors[0])
+		//reply.Successors = n.Successors
 	} else {
-		return false, n.closest_predecing_node(id)
-		//return false, n.Successors[0]
+		//if the file is outside. Should return the closest preceding node before ID. Have to implement fix_fingers for this to work.
+		//Right now it will return the next successor, jumping only 1 step on the ring. Search time is O(N), we want O(log(N))
+		reply.Found = false
+		reply.Reply = ""
+		reply.Forward = string(n.Successors[0])
 	}
+
+	n.mu.Unlock()
+	return nil
 
 }
 
