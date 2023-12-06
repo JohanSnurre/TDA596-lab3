@@ -6,7 +6,8 @@ type Args struct {
 }
 
 type Reply struct {
-	Reply     string
-	Successor int
-	FoundSucc bool
+	Reply       string
+	Successor   int
+	FoundSucc   bool
+	SuccAddress string
 }

@@ -11,7 +11,8 @@ type NodeAddress string
 
 type Node struct {
 	id          int
-	successors  []int
+	address     string
+	successors  []*Node
 	predecessor *Node
 	fingers     []int
 }
@@ -26,9 +27,13 @@ func (n *Node) HandlePing(arguments *Args, reply *Reply) error {
 
 func (n *Node) HandleFind(arguments *Args, reply *Reply) error {
 	id := arguments.NodeID
-	succ := n.find(id)
+	//succ := n.find(id)
+
+	found, succ := n.findSuccessor(id)
+
 	reply.Successor = succ.id
-	reply.FoundSucc = true
+	reply.FoundSucc = found
+
 	return nil
 
 }
@@ -38,7 +43,7 @@ func NewNode(id int, maxSucc int) *Node {
 	//node := Node{NodeAddress(Address), []NodeAddress{}, "", []NodeAddress{}, make(map[Key]string)}
 	node := Node{}
 	node.id = id
-	node.successors = make([]int, maxSucc)
+	node.successors = make([]*Node, maxSucc)
 	node.predecessor = nil
 
 	return &node
@@ -70,11 +75,11 @@ func (n *Node) closestPrecedingNode(id int) *Node {
 }
 
 func (n *Node) findSuccessor(id int) (bool, *Node) {
-	if n.id == n.successors[0] {
+	if n.id == n.successors[0].id {
 		return true, n
 	}
 
-	if id > n.id && id <= n.successors[0] {
+	if id > n.id && id <= n.successors[0].id {
 		return true, n
 	}
 
@@ -84,7 +89,7 @@ func (n *Node) findSuccessor(id int) (bool, *Node) {
 
 func (n *Node) create() {
 	n.predecessor = nil
-	n.successors[0] = n.id
+	n.successors[0] = n
 
 }
 

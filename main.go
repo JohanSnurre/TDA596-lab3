@@ -45,17 +45,15 @@ func handleJoin(node *Node) {
 		nextNode = reply.Successor
 		found = reply.FoundSucc
 
-		fmt.Println(nextNode)
-
 		if found {
 			break
 		}
 
 	}
 	succ := nextNode
-	fmt.Println("new succ is: " + strconv.Itoa(reply.Successor))
+	fmt.Println("new succ is: " + strconv.Itoa(succ))
 
-	node.successors[0] = succ
+	node.successors[0] = node
 }
 
 func create(node *Node) {
