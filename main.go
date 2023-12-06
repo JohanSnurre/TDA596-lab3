@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -83,6 +84,7 @@ func main() {
 
 	go loopCP(time.Duration(*timeCheckPredecessor))
 	go loopStab(time.Duration(*timeStablize))
+	go loopFF(time.Duration(*timeFixFingers))
 
 	res := bufio.NewReader(os.Stdin)
 	var s string
@@ -100,6 +102,7 @@ func main() {
 	m["stab"] = stabilize
 	m["cp"] = cp
 	m["c"] = c
+	m["StoreFile"] = StoreFile
 	for running {
 
 		fmt.Print("::> ")
@@ -118,6 +121,25 @@ func main() {
 	return
 }
 
+func StoreFile(args []string) {
+
+	/*
+		filepath := args[1]
+		f := os.Open(filepath)
+
+		text := io.ReadAll(f)
+
+		id := hashString(f.name())
+
+
+
+		call()
+
+
+	*/
+
+}
+
 func loopCP(t time.Duration) {
 	for {
 		cp([]string{})
@@ -127,8 +149,11 @@ func loopCP(t time.Duration) {
 }
 
 func loopFF(t time.Duration) {
+	for {
+		fix_fingers()
+		time.Sleep(t * time.Millisecond)
+	}
 
-	time.Sleep(t * time.Millisecond)
 }
 
 func loopStab(t time.Duration) {
@@ -153,7 +178,7 @@ func quit(args []string) {
 
 func cp(args []string) {
 
-	arguments := Args{"CP", string(node.Address)}
+	arguments := Args{"CP", string(node.Address), 0}
 	reply := Reply{}
 
 	if string(node.Predecessor) == "" {
@@ -171,13 +196,62 @@ func cp(args []string) {
 
 }
 
+func fix_fingers() {
+
+	if len(node.FingerTable) == 0 {
+		node.FingerTable = []NodeAddress{node.Successors[0]}
+
+		return
+	}
+
+	temp := []NodeAddress{}
+	node.FingerTable = []NodeAddress{}
+	for next := 0; next < 10; next++ {
+
+		offset := int64(math.Pow(2, float64(next)))
+		//fmt.Println(offset)
+		add := node.Address
+		flag := false
+		for !flag {
+
+			reply := Reply{}
+			args := Args{"", string(node.Address), offset}
+
+			ok := call(string(add), "Node.Find_successor", &args, &reply)
+			if !ok {
+				fmt.Println("Failed to fix fingers")
+				return
+			}
+			//fmt.Println(reply.Found)
+
+			switch found := reply.Found; found {
+			case true:
+				temp = append(temp, NodeAddress(reply.Reply))
+				//fmt.Println("SUCC: " + reply.Reply)
+				flag = true
+				break
+			case false:
+				//fmt.Println("FORWARD: " + reply.Forward)
+				add = NodeAddress(reply.Forward)
+				break
+
+			}
+
+		}
+
+	}
+
+	node.FingerTable = temp
+
+}
+
 func c(args []string) {
 	node.Predecessor = ""
 }
 
 func stabilize(args []string) {
 
-	arguments := Args{"", string(node.Address)}
+	arguments := Args{"", string(node.Address), 0}
 	reply := Reply{}
 
 	ok := call(string(node.Successors[0]), "Node.Get_predecessor", &arguments, &reply)
@@ -221,7 +295,7 @@ func stabilize(args []string) {
 	}
 
 	node.mu.Unlock()
-	arguments = Args{"", string(node.Address)}
+	arguments = Args{"", string(node.Address), 0}
 	reply = Reply{}
 	ok = call(string(node.Successors[0]), "Node.Get_successors", &arguments, &reply)
 	if !ok {
@@ -238,7 +312,7 @@ func stabilize(args []string) {
 
 	//dump([]string{})
 
-	arguments = Args{"Stabilize", string(node.Address)}
+	arguments = Args{"Stabilize", string(node.Address), 0}
 	reply = Reply{}
 	notify([]string{})
 
@@ -246,7 +320,7 @@ func stabilize(args []string) {
 
 func notify(args []string) {
 
-	arguments := Args{"Notify", string(node.Address)}
+	arguments := Args{"Notify", string(node.Address), 0}
 	reply := Reply{}
 
 	ok := call(string(node.Successors[0]), "Node.Notify", &arguments, &reply)
@@ -306,7 +380,7 @@ func create(args []string) {
 func join(address NodeAddress) {
 
 	reply := Reply{}
-	args := Args{"", string(node.Address)}
+	args := Args{"", string(node.Address), 0}
 
 	add := address
 
@@ -394,7 +468,7 @@ func dump(args []string) {
 func ping(args []string) {
 
 	reply := Reply{}
-	arguments := Args{"Ping", ""}
+	arguments := Args{"Ping", "", 0}
 	fmt.Println(args[1])
 
 	ok := call(args[1], "Node.HandlePing", &arguments, &reply)

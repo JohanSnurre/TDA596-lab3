@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/sha1"
-	"fmt"
 	"math/big"
 	"sync"
 )
@@ -59,18 +58,17 @@ func (n *Node) Get_predecessor(args *Args, reply *Reply) error {
 func (n *Node) Find_successor(args *Args, reply *Reply) error {
 
 	n.mu.Lock()
-
 	addressH := hashAddress(NodeAddress(args.Address))
 
-	addH := hashAddress(node.Address)
+	addressH = addressH.Add(addressH, big.NewInt(args.Offset))
 
-	succH := hashAddress(NodeAddress(n.Successors[0]))
+	found, address := n.findSuccessor(addressH)
 
-	if between(addH, addressH, succH, true) {
+	if found {
 		reply.Found = true
-		reply.Reply = string(node.Address)
+		reply.Reply = string(address)
 		reply.Successors = n.Successors
-		fmt.Println(n.Successors)
+		//fmt.Println(n.Successors)
 		reply.Forward = ""
 	} else {
 		reply.Found = false
@@ -78,8 +76,25 @@ func (n *Node) Find_successor(args *Args, reply *Reply) error {
 		reply.Forward = string(n.Successors[0])
 		//fmt.Println(reply.Reply)
 	}
+
 	n.mu.Unlock()
 	return nil
+}
+
+func (n *Node) closest_predecing_node(id *big.Int) NodeAddress {
+
+	for i := len(n.FingerTable) - 1; i >= 0; i-- {
+
+		addH := hashAddress(n.Address)
+		fingerH := hashAddress(n.FingerTable[i])
+
+		if between(addH, fingerH, id, false) {
+			return n.FingerTable[i]
+		}
+
+	}
+	return n.Address
+
 }
 
 func hashAddress(elt NodeAddress) *big.Int {
@@ -87,7 +102,10 @@ func hashAddress(elt NodeAddress) *big.Int {
 	hasher := sha1.New()
 	hasher.Write([]byte(elt))
 
-	return new(big.Int).SetBytes(hasher.Sum(nil))
+	t := new(big.Int).SetBytes(hasher.Sum(nil))
+
+	return new(big.Int).Mod(t, big.NewInt(int64(1024)))
+	//return new(big.Int).SetBytes(hasher.Sum(nil))
 
 }
 
@@ -96,7 +114,10 @@ func hashString(elt string) *big.Int {
 	hasher := sha1.New()
 	hasher.Write([]byte(elt))
 
-	return new(big.Int).SetBytes(hasher.Sum(nil))
+	t := new(big.Int).SetBytes(hasher.Sum(nil))
+
+	return new(big.Int).Mod(t, big.NewInt(int64(1024)))
+	//return new(big.Int).SetBytes(hasher.Sum(nil))
 
 }
 
@@ -112,9 +133,18 @@ func (n *Node) getLocalAddress() {
 
 }
 
-func (n *Node) findSuccessor(m *Node) NodeAddress {
+func (n *Node) findSuccessor(id *big.Int) (bool, NodeAddress) {
 
-	return ""
+	addH := hashAddress(n.Address)
+
+	succH := hashAddress(NodeAddress(n.Successors[0]))
+
+	if between(addH, id, succH, true) {
+		return true, n.Successors[0]
+	} else {
+		return false, n.closest_predecing_node(id)
+		//return false, n.Successors[0]
+	}
 
 }
 
@@ -169,6 +199,22 @@ func (n *Node) Notify(args *Args, reply *Reply) error {
 }
 
 func (n *Node) fix_fingers() {
+	/*
+		next := 1
+
+		addressH := hashAddress(n.Address)
+
+		for {
+			if next > 5 {
+				break
+			}
+
+			n.FingerTable[next] =
+
+			next = next + 1
+
+		}
+	*/
 
 }
 
