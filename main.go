@@ -2,24 +2,60 @@ package main
 
 import (
 	"crypto/sha1"
+	"flag"
+	"fmt"
 	"math/big"
 )
 
-type Key string
-type NodeAddress string
+func main() {
+	address := flag.String("a", "", "The IP address that the Chord client will bind to, as well as advertise to other nodes")
+	port := flag.Int("p", 0, "The port that the Chord client will bind to and listen on")
 
-type Node struct {
-	Address     NodeAddress
-	FingerTable []NodeAddress
-	Predecessor NodeAddress
-	Successors  []NodeAddress
+	joinAddress := flag.String("ja", "", "The IP address of the machine running a Chord node")
+	joinPort := flag.Int("jp", 0, "The port that an existing Chord node is bound to and listening on")
 
-	Bucket map[Key]string
+	ts := flag.Int("ts", 0, "The time in milliseconds between invocations of 'stabilize'")
+	tff := flag.Int("tff", 0, "The time in milliseconds between invocations of 'fix fingers'")
+	tcp := flag.Int("tcp", 0, "The time in milliseconds between invocations of 'check predecessor'")
+
+	r := flag.Int("r", 0, "The number of successors maintained by the Chord client")
+
+	id := flag.String("i", "", "The identifier (ID) assigned to the Chord client which will override the ID computed by the SHA1 sum of the client’s IP address and port number")
+
+	flag.Parse()
+
+	newNode := Node{
+		Address:    NodeAddress(*address + ":" + fmt.Sprint(*port)),
+		Ts:         *ts,
+		Tff:        *tff,
+		Tcp:        *tcp,
+		Successors: make([]NodeAddress, *r),
+	}
+
+	if isFlagPassed("i") {
+		newNode.Id, _ = new(big.Int).SetString(*id, 10)
+	} else {
+		newNode.Id = hashString(string(newNode.Address))
+		fmt.Println("my id:", newNode.Id)
+	}
+
+	if isFlagPassed("ja") && isFlagPassed("jp") {
+		go newNode.join(NodeAddress(*joinAddress + ":" + fmt.Sprint(*joinPort)))
+	} else {
+		go newNode.create()
+	}
+	newNode.run()
+
 }
 
-func main() {
-
-	return
+func isFlagPassed(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
 
 func hashString(elt string) *big.Int {
@@ -31,56 +67,3 @@ func hashString(elt string) *big.Int {
 
 }
 
-func jump() {
-
-}
-
-func between() {
-
-}
-
-func getLocalAddress() {
-
-}
-
-func findSuccessor() {
-
-}
-
-func create() {
-
-}
-
-func join() {
-
-}
-
-func stabilize() {
-
-}
-
-func notify() {
-
-}
-
-func fix_fingers() {
-
-}
-
-func checkPredecessor() {
-
-}
-
-func run() {
-
-	//start an RPC server over http
-	// define request and reply structs
-	// handle requests appropriatley
-
-}
-
-//RPC call
-func call() error {
-
-	return nil
-}
