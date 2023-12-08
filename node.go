@@ -2,7 +2,9 @@ package main
 
 import (
 	"crypto/sha1"
+	"fmt"
 	"math/big"
+	"os"
 	"sync"
 )
 
@@ -22,6 +24,9 @@ type Node struct {
 func (n *Node) HandlePing(arguments *Args, reply *Reply) error {
 	n.mu.Lock()
 	//fmt.Println("In HandlePing")
+	if arguments.Offset == 69 {
+		fmt.Println("good ping")
+	}
 	if arguments.Command == "CP" {
 		reply.Reply = "CP reply"
 	}
@@ -58,29 +63,29 @@ func (n *Node) Get_predecessor(args *Args, reply *Reply) error {
 /*
 func (n *Node) Find_successor(args *Args, reply *Reply) error {
 
-	n.mu.Lock()
-	addressH := hashAddress(NodeAddress(args.Address))
+		n.mu.Lock()
+		addressH := hashAddress(NodeAddress(args.Address))
 
-	addressH = addressH.Add(addressH, big.NewInt(args.Offset))
+		addressH = addressH.Add(addressH, big.NewInt(args.Offset))
 
-	found, address := n.findSuccessor(addressH)
+		found, address := n.findSuccessor(addressH)
 
-	if found {
-		reply.Found = true
-		reply.Reply = string(address)
-		reply.Successors = n.Successors
-		//fmt.Println(n.Successors)
-		reply.Forward = ""
-	} else {
-		reply.Found = false
-		reply.Reply = ""
-		reply.Forward = string(n.Successors[0])
-		//fmt.Println(reply.Reply)
+		if found {
+			reply.Found = true
+			reply.Reply = string(address)
+			reply.Successors = n.Successors
+			//fmt.Println(n.Successors)
+			reply.Forward = ""
+		} else {
+			reply.Found = false
+			reply.Reply = ""
+			reply.Forward = string(n.Successors[0])
+			//fmt.Println(reply.Reply)
+		}
+
+		n.mu.Unlock()
+		return nil
 	}
-
-	n.mu.Unlock()
-	return nil
-}
 */
 func (n *Node) closest_predecing_node(id *big.Int) NodeAddress {
 
@@ -233,6 +238,20 @@ func (n *Node) fix_fingers() {
 
 func (n *Node) checkPredecessor() {
 
+}
+
+func (n *Node) Store(args *Args, reply *Reply) error {
+	f := args.Address
+	content := []byte(args.Command)
+
+	filename := f + string(n.Address)
+
+	err := os.WriteFile(filename, content, 0777)
+	if err != nil {
+		fmt.Println("problem writing file")
+	}
+
+	return nil
 }
 
 func run() {

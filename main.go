@@ -99,6 +99,8 @@ func main() {
 	//m["ping"] = ping
 	m["dump"] = dump
 	m["StoreFile"] = StoreFile
+	m["LookUp"] = LookUp
+	m["PrintState"] = PrintState
 	for running {
 
 		fmt.Print("::> ")
@@ -117,8 +119,12 @@ func main() {
 	return
 }
 
-func StoreFile(args []string) {
+func LookUp(args []string) {
+	add := findFile(args)
+	fmt.Println(add)
+}
 
+func findFile(args []string) string {
 	filename := args[1]
 
 	reply := Reply{}
@@ -131,7 +137,7 @@ func StoreFile(args []string) {
 		ok := call(string(add), "Node.FindSuccessor", &arguments, &reply)
 		if !ok {
 			fmt.Println("Failed to fix fingers")
-			return
+			return ""
 		}
 		switch found := reply.Found; found {
 
@@ -149,13 +155,42 @@ func StoreFile(args []string) {
 	}
 
 	//Print out the correct address to store the file in. Dependent on hashString(filename)
-	fmt.Println(reply.Reply)
+	//fmt.Println(reply.Reply)
+	return reply.Reply
+
+}
+
+func StoreFile(args []string) {
+
+	filename := args[1]
+
+	file, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Println("file open error: " + err.Error())
+	}
+
+	content := string(file)
+
+	id := findFile(args)
 
 	/*
 		Use the address and make an rpc connection to upload the file contents to that node
 
 	*/
 
+	reply := Reply{}
+	arguments := Args{content, filename, 0}
+
+	ok := call(string(id), "Node.Store", &arguments, &reply)
+	if !ok {
+		fmt.Println("cano reach the node")
+		return
+	}
+
+}
+
+func PrintState(args []string) {
+	dump(args)
 }
 
 func loopCP(t time.Duration) {
