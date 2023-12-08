@@ -60,6 +60,13 @@ func (n *Node) Get_predecessor(args *Args, reply *Reply) error {
 
 }
 
+func (n *Node) GetNodeInfo(args *Args, reply *Reply) error {
+	//  identifier, IP address, and port
+	id := hashAddress(NodeAddress(args.Address))
+	reply.Reply = id.String() + " " + args.Address
+	return nil
+}
+
 /*
 func (n *Node) Find_successor(args *Args, reply *Reply) error {
 
@@ -241,10 +248,8 @@ func (n *Node) checkPredecessor() {
 }
 
 func (n *Node) Store(args *Args, reply *Reply) error {
-	f := args.Address
+	filename := args.Address
 	content := []byte(args.Command)
-
-	filename := f + string(n.Address)
 
 	err := os.WriteFile(filename, content, 0777)
 	if err != nil {

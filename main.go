@@ -190,7 +190,27 @@ func StoreFile(args []string) {
 }
 
 func PrintState(args []string) {
-	dump(args)
+	// dump(args)
+	node.mu.Lock()
+	fmt.Println(getNodeInfo(node.Address))
+
+	fmt.Println("SUCCESSORS:")
+	for _, s := range node.Successors {
+		fmt.Println(getNodeInfo(s))
+	}
+
+	fmt.Println("FINGER TABLE:")
+	for _, f := range node.FingerTable {
+		fmt.Println(getNodeInfo(f))
+	}
+
+	node.mu.Unlock()
+}
+
+func getNodeInfo(address NodeAddress) string {
+	id := hashAddress(address)
+	return id.String() + " => " + string(address)
+
 }
 
 func loopCP(t time.Duration) {
