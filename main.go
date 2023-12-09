@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +30,11 @@ var timeFixFingers *int
 var timeCheckPredecessor *int
 var successorAmount *int
 var identifier *string
+
+var FingerTableSize = 10
+
+var m sync.Mutex
+var connections = make(map[string]*rpc.Client)
 
 func main() {
 
@@ -61,7 +67,7 @@ func main() {
 	}
 
 	add = NodeAddress(*address + localPort)
-	node = &Node{Address: NodeAddress(add), Successors: []NodeAddress{}, Predecessor: "", FingerTable: []NodeAddress{}, Bucket: make(map[Key]string)}
+	node = &Node{Address: add, Successors: []NodeAddress{}, Predecessor: "", FingerTable: []NodeAddress{}, Bucket: make(map[Key]string)}
 
 	server(*address, ":"+strconv.Itoa(*addressPort))
 
@@ -84,7 +90,7 @@ func main() {
 
 	go loopCP(time.Duration(*timeCheckPredecessor))
 	go loopStab(time.Duration(*timeStablize))
-	//go loopFF(time.Duration(*timeFixFingers))
+	go loopFF(time.Duration(*timeFixFingers))
 
 	res := bufio.NewReader(os.Stdin)
 	var s string
@@ -127,6 +133,8 @@ func LookUp(args []string) {
 func findFile(args []string) string {
 	filename := args[1]
 
+	fmt.Println("file id: ", hashString(filename))
+
 	reply := Reply{}
 	arguments := Args{"", filename, 0}
 
@@ -149,6 +157,7 @@ func findFile(args []string) string {
 		//if the file maps somewhere else then we have to forward the request to a better node
 		case false:
 			add = NodeAddress(reply.Forward)
+			fmt.Println("next id to check :", hashString(reply.Forward))
 			break
 		}
 
@@ -245,6 +254,16 @@ func help(args []string) {
 
 func quit(args []string) {
 	running = false
+	m.Lock()
+	defer m.Unlock()
+	fmt.Println(len(connections))
+	for add, conn := range connections {
+		err := conn.Close()
+		if err != nil {
+			fmt.Println("error closing :", add, err)
+		}
+	}
+
 	fmt.Print("Quitting!\n")
 }
 
@@ -269,18 +288,17 @@ func cp(args []string) {
 }
 
 func fix_fingers() {
-
 	if len(node.FingerTable) == 0 {
+		node.mu.Lock()
 		node.FingerTable = []NodeAddress{node.Successors[0]}
+		node.mu.Unlock()
 
 		return
 	}
 
-	temp := []NodeAddress{}
 	node.FingerTable = []NodeAddress{}
-	for next := 0; next < 10; next++ {
-
-		offset := int64(math.Pow(2, float64(next)))
+	for next := 1; next <= FingerTableSize; next++ {
+		offset := int64(math.Pow(2, float64(next)-1))
 		add := node.Address
 		flag := false
 		for !flag {
@@ -290,16 +308,18 @@ func fix_fingers() {
 
 			ok := call(string(add), "Node.FindSuccessor", &args, &reply)
 			if !ok {
-				fmt.Println("Failed to fix fingers")
+				fmt.Println("Failed to fix fingers : ")
 				return
 			}
 			//fmt.Println(reply.Found)
 
 			switch found := reply.Found; found {
 			case true:
-				temp = append(temp, NodeAddress(reply.Reply))
+				node.mu.Lock()
+				node.FingerTable = append(node.FingerTable, NodeAddress(reply.Reply))
 				//fmt.Println("SUCC: " + reply.Reply)
 				flag = true
+				node.mu.Unlock()
 				break
 			case false:
 				//fmt.Println("FORWARD: " + reply.Forward)
@@ -311,8 +331,6 @@ func fix_fingers() {
 		}
 
 	}
-
-	node.FingerTable = temp
 
 }
 
@@ -430,13 +448,29 @@ func join(address NodeAddress) {
 
 func call(address string, method string, args interface{}, reply interface{}) bool {
 
+	m.Lock()
+	defer m.Unlock()
+
+	c, ok := connections[address]
+	if ok { // if already connection to address
+		err := c.Call(method, args, reply)
+		if err == nil {
+			return true
+		}
+
+		fmt.Println("CALL ERROR: ", err)
+		delete(connections, address)
+		return false
+	}
+
 	//then := time.Now().Nanosecond()
 	c, err := rpc.DialHTTP("tcp", address)
 	if err != nil {
 		//fmt.Println("Could not connect, return false")
+		fmt.Println("error :", err)
 		return false
 	}
-	defer c.Close()
+	connections[address] = c
 
 	err = c.Call(method, args, reply)
 
@@ -463,13 +497,14 @@ func get(args []string) {
 
 }
 
-func delete(args []string) {
+// func delete(args []string) {
 
-}
+// }
 
 func dump(args []string) {
 
 	fmt.Println("Address: " + node.Address)
+	fmt.Println("ID: " + hashAddress(node.Address).String())
 	fmt.Print("Finger table: ")
 	fmt.Println(node.FingerTable)
 	fmt.Println("Predecessor: " + node.Predecessor)
