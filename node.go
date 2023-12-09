@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha1"
+	"math"
 	"math/big"
 	"sync"
 )
@@ -58,29 +59,29 @@ func (n *Node) Get_predecessor(args *Args, reply *Reply) error {
 /*
 func (n *Node) Find_successor(args *Args, reply *Reply) error {
 
-	n.mu.Lock()
-	addressH := hashAddress(NodeAddress(args.Address))
+		n.mu.Lock()
+		addressH := hashAddress(NodeAddress(args.Address))
 
-	addressH = addressH.Add(addressH, big.NewInt(args.Offset))
+		addressH = addressH.Add(addressH, big.NewInt(args.Offset))
 
-	found, address := n.findSuccessor(addressH)
+		found, address := n.findSuccessor(addressH)
 
-	if found {
-		reply.Found = true
-		reply.Reply = string(address)
-		reply.Successors = n.Successors
-		//fmt.Println(n.Successors)
-		reply.Forward = ""
-	} else {
-		reply.Found = false
-		reply.Reply = ""
-		reply.Forward = string(n.Successors[0])
-		//fmt.Println(reply.Reply)
+		if found {
+			reply.Found = true
+			reply.Reply = string(address)
+			reply.Successors = n.Successors
+			//fmt.Println(n.Successors)
+			reply.Forward = ""
+		} else {
+			reply.Found = false
+			reply.Reply = ""
+			reply.Forward = string(n.Successors[0])
+			//fmt.Println(reply.Reply)
+		}
+
+		n.mu.Unlock()
+		return nil
 	}
-
-	n.mu.Unlock()
-	return nil
-}
 */
 func (n *Node) closest_predecing_node(id *big.Int) NodeAddress {
 
@@ -140,6 +141,8 @@ func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 	addH := hashAddress(n.Address)
 
 	ID := hashAddress(NodeAddress(args.Address))
+	ID.Add(ID, big.NewInt(args.Offset))
+	ID.Mod(ID, big.NewInt(int64(math.Pow(2, float64(FingerTableSize)))))
 
 	succH := hashAddress(NodeAddress(n.Successors[0]))
 
@@ -153,7 +156,9 @@ func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 		//Right now it will return the next successor, jumping only 1 step on the ring. Search time is O(N), we want O(log(N))
 		reply.Found = false
 		reply.Reply = ""
-		reply.Forward = string(n.Successors[0])
+		reply.Forward = string(n.closest_predecing_node(ID))
+
+		//reply.Forward = string(n.Successors[0])
 	}
 
 	n.mu.Unlock()
@@ -209,26 +214,6 @@ func (n *Node) Notify(args *Args, reply *Reply) error {
 	}
 	n.mu.Unlock()
 	return nil
-}
-
-func (n *Node) fix_fingers() {
-	/*
-		next := 1
-
-		addressH := hashAddress(n.Address)
-
-		for {
-			if next > 5 {
-				break
-			}
-
-			n.FingerTable[next] =
-
-			next = next + 1
-
-		}
-	*/
-
 }
 
 func (n *Node) checkPredecessor() {
