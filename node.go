@@ -201,6 +201,36 @@ func (n *Node) Store(args *FArgs, reply *FReply) error {
 		fmt.Println("problem writing file")
 	}
 
+	// // secure files on other nodes
+	// tmpFileame := "tmp_" + filename
+
+	// // err = os.WriteFile(tmpFileame, []byte(content), 0777)
+	// // if err != nil {
+	// // 	fmt.Println("problem writing file")
+	// // }
+
+	// // err = os.WriteFile(tmpFileame, []byte(content), 0777)
+	// var dests []NodeAddress
+
+	// for _, a := range node.FingerTable {
+	// 	if !slices.Contains(dests, a) {
+	// 		dests = append(dests, a)
+	// 	}
+	// }
+
+	// for _, a := range dests {
+	// 	dest := a
+	// 	reply := FReply{}
+	// 	arguments := FArgs{string(add), tmpFileame, content}
+
+	// 	ok := call(string(dest), "Node.Store", &arguments, &reply)
+	// 	if !ok {
+	// 		fmt.Println("cano reach the node")
+
+	// 	}
+
+	// }
+
 	return nil
 }
 
