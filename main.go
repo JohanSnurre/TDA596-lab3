@@ -56,7 +56,7 @@ func main() {
 	timeCheckPredecessor = flag.Int("tcp", -1, "Time before check predecessor is called")
 	successorAmount = flag.Int("r", -1, "The amount of immediate successor stored")
 	identifier = flag.String("i", "", "The string identifier of a node")
-	SK = flag.Int("sk", 0, "Secret key")
+	SK = flag.Int("sk", 3, "Secret key")
 	encryptionKey := flag.String("e", "abcdabcdabcdabcdabcdabcdabcdabcd", "Enc key")
 
 	flag.Parse()
@@ -64,6 +64,9 @@ func main() {
 	*joinAddress = strings.TrimSpace(*joinAddress)
 	*identifier = strings.TrimSpace(*identifier)
 	localPort = ":" + strconv.Itoa(*addressPort)
+
+	prime = int64(17)
+	generator = int64(3)
 
 	//fmt.Printf("%s, %d", *joinAddress, *joinPort)
 
@@ -141,17 +144,14 @@ func main() {
 
 func LookUp(args []string) {
 	add := findFile(args)
-	fmt.Println(add)
+	//fmt.Println(add)
 
 	//Generate a random prime number
 	//Choose a generator for the group of that prime number
 
-	p := int64(67)
-	g := int64(12)
+	PK := int64(math.Mod(math.Pow(float64(generator), float64(*SK)), float64(prime)))
 
-	PK := int64(math.Mod(math.Pow(float64(g), float64(*SK)), float64(p)))
-
-	SendRequest(add, args[1], PK, p, g, 0)
+	SendRequest(add, args[1], PK, prime, generator, 0)
 
 }
 
@@ -210,7 +210,7 @@ func StoreFile(args []string) {
 	content := string(file)
 
 	add := findFile(args)
-	fmt.Println(add, node.Address)
+	//fmt.Println(add, node.Address)
 
 	//if the address maps to itself then there is no need to make a call. Encryption is done
 	if strings.Compare(add, string(node.Address)) == 0 {
@@ -353,14 +353,14 @@ func fix_fingers() {
 			case true:
 				//node.mu.Lock()
 				temp = append(temp, NodeAddress(reply.Reply))
-				fmt.Println("SUCC: "+reply.Reply, "Offset: ", offset)
+				//fmt.Println("SUCC: "+reply.Reply, "Offset: ", offset)
 				flag = true
 				//node.mu.Unlock()
 				break
 			case false:
 
 				add = NodeAddress(reply.Forward)
-				fmt.Println("FORWARD: " + add)
+				//fmt.Println("FORWARD: " + add)
 				break
 
 			}
@@ -635,6 +635,8 @@ func SendRequest(address string, filename string, PK int64, prime int64, generat
 
 	secret := int64(math.Mod(math.Pow(float64(reply.PublicKey), float64(*SK)), float64(prime)))
 
+	//fmt.Println(reply.PublicKey, secret)
+
 	secretExt := strconv.FormatInt(secret, 10)
 	for len(secretExt) < 32 {
 		secretExt = secretExt + secretExt
@@ -674,6 +676,7 @@ func SendRequest(address string, filename string, PK int64, prime int64, generat
 		return nil
 
 	}
+
 	fmt.Println(text)
 	return nil
 

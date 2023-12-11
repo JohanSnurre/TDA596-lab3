@@ -257,7 +257,7 @@ func (n *Node) Store(args *Args, reply *Reply) error {
 	content := []byte(args.Command)
 	address := args.Address
 
-	fmt.Println(string(content))
+	//fmt.Println(string(content))
 	/*
 
 		Get the file
@@ -276,7 +276,11 @@ func (n *Node) Store(args *Args, reply *Reply) error {
 		return nil
 	}
 
-	ok := call(address, "Node.HandleRequest", &args, &reply)
+	PK := int64(math.Mod(math.Pow(float64(generator), float64(*SK)), float64(prime)))
+	//fmt.Println(generator, *SK, prime, PK)
+	arguments := Args{Prime: prime, Generator: generator, PublicKey: PK}
+
+	ok := call(address, "Node.HandleRequest", &arguments, &reply)
 	if !ok {
 		fmt.Println("Error requesting")
 		return nil
@@ -290,9 +294,7 @@ func (n *Node) Store(args *Args, reply *Reply) error {
 	}
 	secretExt = secretExt[:32]
 
-	PK := int64(math.Mod(math.Pow(float64(generator), float64(*SK)), float64(prime)))
-
-	arguments := Args{Filename: filename, PublicKey: PK, Prime: prime, Generator: generator}
+	arguments = Args{Filename: filename, PublicKey: PK, Prime: prime, Generator: generator}
 	rep := Reply{}
 
 	ok = call(address, "Node.GetKey", &arguments, &rep)
@@ -330,6 +332,8 @@ func (n *Node) HandleRequest(args *Args, reply *Reply) error {
 	generator = args.Generator
 	prime = args.Prime
 
+	//fmt.Println(args.PublicKey)
+
 	n.PK_B = args.PublicKey
 
 	ret := math.Mod(math.Pow(float64(generator), float64(*SK)), float64(prime))
@@ -357,6 +361,8 @@ func (n *Node) GetFile(args *Args, reply *Reply) error {
 func (n *Node) GetKey(args *Args, reply *Reply) error {
 
 	secret := int64(math.Mod(math.Pow(float64(n.PK_B), float64(*SK)), float64(args.Prime)))
+
+	//fmt.Println("PK: ", n.PK_B)
 	//fmt.Println("Secret: ", secret)
 
 	secretExt := strconv.FormatInt(secret, 10)
