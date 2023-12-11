@@ -141,7 +141,7 @@ func main() {
 
 func LookUp(args []string) {
 	add := findFile(args)
-	//fmt.Println(add)
+	fmt.Println(add)
 
 	//Generate a random prime number
 	//Choose a generator for the group of that prime number
@@ -250,6 +250,19 @@ func loopCP(t time.Duration) {
 
 }
 
+func next() func() int {
+
+	next := 0
+	return func() int {
+		next++
+		if next > 10 {
+			next = 1
+		}
+		return next
+	}
+
+}
+
 func loopFF(t time.Duration) {
 	for {
 		fix_fingers()
@@ -340,13 +353,14 @@ func fix_fingers() {
 			case true:
 				//node.mu.Lock()
 				temp = append(temp, NodeAddress(reply.Reply))
-				//fmt.Println("SUCC: " + reply.Reply)
+				fmt.Println("SUCC: "+reply.Reply, "Offset: ", offset)
 				flag = true
 				//node.mu.Unlock()
 				break
 			case false:
-				//fmt.Println("FORWARD: " + reply.Forward)
+
 				add = NodeAddress(reply.Forward)
+				fmt.Println("FORWARD: " + add)
 				break
 
 			}
@@ -394,7 +408,7 @@ func stabilize(args []string) {
 	//node.mu.Lock()
 	//fmt.Println(reply.Successors)
 	node.Successors = []NodeAddress{node.Successors[0]}
-	node.Successors = append(node.Successors, reply.Successors[:len(reply.Successors)]...)
+	node.Successors = append(node.Successors, reply.Successors...)
 	if len(node.Successors) > *successorAmount {
 		node.Successors = node.Successors[:*successorAmount]
 	}
@@ -403,6 +417,8 @@ func stabilize(args []string) {
 	arguments = Args{Command: "Stabilize", Address: string(node.Address), Offset: 0}
 	reply = Reply{}
 	notify([]string{})
+
+	return
 
 }
 
@@ -456,6 +472,8 @@ func join(address NodeAddress) {
 		call(string(add), "Node.FindSuccessor", &args, &reply)
 		//fmt.Println(reply.Reply)
 
+		fmt.Println(reply.Successors)
+
 		switch found := reply.Found; found {
 		case true:
 			node.join(NodeAddress(reply.Reply))
@@ -464,7 +482,7 @@ func join(address NodeAddress) {
 			break
 		case false:
 			add = NodeAddress(reply.Forward)
-			//fmt.Println("False")
+			//fmt.Println("False", add)
 			break
 
 		}

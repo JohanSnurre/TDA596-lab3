@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -107,6 +108,24 @@ func (n *Node) closest_preceding_node(id *big.Int) NodeAddress {
 
 }
 
+func (n *Node) test(id *big.Int) NodeAddress {
+
+	fmt.Println(n.Successors)
+
+	for i := len(n.Successors) - 1; i >= 0; i-- {
+
+		addH := hashAddress(n.Address)
+		fingerH := hashAddress(n.Successors[i])
+
+		if between(addH, fingerH, id, true) {
+			return n.Successors[i]
+		}
+
+	}
+	return n.Address
+
+}
+
 func hashAddress(elt NodeAddress) *big.Int {
 
 	hasher := sha1.New()
@@ -162,11 +181,20 @@ func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 	} else {
 		//if the file is outside. Should return the closest preceding node before ID. Have to implement fix_fingers for this to work.
 		//Right now it will return the next successor, jumping only 1 step on the ring. Search time is O(N), we want O(log(N))
-		reply.Found = false
-		reply.Reply = ""
-		//reply.Forward = string(n.closest_preceding_node(ID))
+		//reply.Found = false
 
-		reply.Forward = string(n.Successors[0])
+		forward := string(n.closest_preceding_node(ID))
+		if strings.Compare(string(forward), string(n.Address)) == 0 {
+			reply.Found = true
+			reply.Reply = forward
+		} else {
+			reply.Found = false
+			reply.Forward = forward
+		}
+
+		//fmt.Println(addH, ID, succH)
+		//reply.Forward = string(n.Successors[0])
+		//reply.Forward = string(n.test(ID))
 	}
 
 	//n.mu.Unlock()
