@@ -8,7 +8,6 @@ import (
 	"math/big"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -104,7 +103,7 @@ func (n *Node) closest_preceding_node(id *big.Int) NodeAddress {
 		}
 
 	}
-	return n.Address
+	return n.Successors[0]
 
 }
 
@@ -177,22 +176,26 @@ func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 	if between(addH, ID, succH, false) {
 		reply.Found = true
 		reply.Reply = string(n.Successors[0])
+		//fmt.Println(addH, reply.Reply, succH)
 		//reply.Successors = n.Successors
 	} else {
 		//if the file is outside. Should return the closest preceding node before ID. Have to implement fix_fingers for this to work.
 		//Right now it will return the next successor, jumping only 1 step on the ring. Search time is O(N), we want O(log(N))
-		//reply.Found = false
+		reply.Found = false
 
-		forward := string(n.closest_preceding_node(ID))
-		if strings.Compare(string(forward), string(n.Address)) == 0 {
-			reply.Found = true
-			reply.Reply = forward
-		} else {
-			reply.Found = false
-			reply.Forward = forward
-		}
+		/*
+			forward := string(n.closest_preceding_node(ID))
+			if strings.Compare(string(forward), string(n.Address)) == 0 {
+				reply.Found = true
+				reply.Reply = forward
+			} else {
+				reply.Found = false
+				reply.Forward = forward
+			}
+		*/
 
 		//fmt.Println(addH, ID, succH)
+		reply.Forward = string(n.closest_preceding_node(ID))
 		//reply.Forward = string(n.Successors[0])
 		//reply.Forward = string(n.test(ID))
 	}

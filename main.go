@@ -332,7 +332,8 @@ func fix_fingers() {
 		return
 	}
 
-	temp := []NodeAddress{}
+	//temp := []NodeAddress{}
+	node.FingerTable = []NodeAddress{}
 	for next := 1; next <= FingerTableSize; next++ {
 		offset := int64(math.Pow(2, float64(next)-1))
 		add := node.Address
@@ -344,6 +345,7 @@ func fix_fingers() {
 
 			ok := call(string(add), "Node.FindSuccessor", &args, &reply)
 			if !ok {
+				//node.Successors = node.Successors[1:]
 				fmt.Println("Failed to fix fingers : ")
 				return
 			}
@@ -352,15 +354,21 @@ func fix_fingers() {
 			switch found := reply.Found; found {
 			case true:
 				//node.mu.Lock()
-				temp = append(temp, NodeAddress(reply.Reply))
+				node.FingerTable = append(node.FingerTable, NodeAddress(reply.Reply))
 				//fmt.Println("SUCC: "+reply.Reply, "Offset: ", offset)
 				flag = true
 				//node.mu.Unlock()
 				break
 			case false:
 
+				if strings.Compare(reply.Forward, string(node.Address)) == 0 {
+					flag = true
+					node.FingerTable = append(node.FingerTable, NodeAddress(reply.Forward))
+					break
+				}
+
 				add = NodeAddress(reply.Forward)
-				//fmt.Println("FORWARD: " + add)
+				fmt.Println("FORWARD: " + add)
 				break
 
 			}
@@ -368,7 +376,6 @@ func fix_fingers() {
 		}
 
 	}
-	node.FingerTable = temp
 
 }
 
@@ -380,12 +387,16 @@ func stabilize(args []string) {
 	arguments := Args{Command: "", Address: string(node.Address), Offset: 0}
 	reply := Reply{}
 
+	dump([]string{})
 	ok := call(string(node.Successors[0]), "Node.Get_predecessor", &arguments, &reply)
 	if !ok {
 		fmt.Println("Could not connect to successor")
 		dump([]string{})
 		//node.mu.Lock()
 		node.Successors = node.Successors[1:]
+		if len(node.Successors) == 0 {
+			node.Successors = []NodeAddress{node.Address}
+		}
 		//node.mu.Unlock()
 		return
 	}
