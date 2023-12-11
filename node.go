@@ -225,10 +225,68 @@ func (n *Node) Notify(args *Args, reply *Reply) error {
 }
 
 func (n *Node) Store(args *Args, reply *Reply) error {
-	filename := args.Address
+	filename := args.Filename
 	content := []byte(args.Command)
+	address := args.Address
 
-	encTxt, err := EncryptMessage([]byte(n.encryptionKey), string(content))
+	fmt.Println(string(content))
+	/*
+
+		Get the file
+
+		get the decryption key
+
+		decrypt the file
+
+		encrypt the file
+
+
+	*/
+
+	//if the file is to be stored locally then there is no need to make a call
+	if hashAddress(NodeAddress(add)) == hashAddress(node.Address) {
+		return nil
+	}
+
+	ok := call(address, "Node.HandleRequest", &args, &reply)
+	if !ok {
+		fmt.Println("Error requesting")
+		return nil
+	}
+
+	secret := int64(math.Mod(math.Pow(float64(reply.PublicKey), float64(*SK)), float64(prime)))
+
+	secretExt := strconv.FormatInt(secret, 10)
+	for len(secretExt) < 32 {
+		secretExt = secretExt + secretExt
+	}
+	secretExt = secretExt[:32]
+
+	PK := int64(math.Mod(math.Pow(float64(generator), float64(*SK)), float64(prime)))
+
+	arguments := Args{Filename: filename, PublicKey: PK, Prime: prime, Generator: generator}
+	rep := Reply{}
+
+	ok = call(address, "Node.GetKey", &arguments, &rep)
+	if !ok {
+		fmt.Println("Error requesting")
+		return nil
+	}
+
+	dKey, err := DecryptMessage([]byte(secretExt), rep.EncKey)
+	if err != nil {
+		fmt.Println("Error decrypting ", err)
+		return nil
+	}
+
+	text, err := DecryptMessage([]byte(dKey), string(content))
+	if err != nil {
+		fmt.Println("Error decrypting ", err)
+		return nil
+
+	}
+
+	encTxt, err := EncryptMessage([]byte(n.encryptionKey), string(text))
 
 	err = os.WriteFile(filename, []byte(encTxt), 0777)
 	if err != nil {

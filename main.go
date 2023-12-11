@@ -200,12 +200,27 @@ func StoreFile(args []string) {
 		fmt.Println("file open error: " + err.Error())
 	}
 
+	EncryptFile([]byte(node.encryptionKey), filename, filename)
+
+	file, err = os.ReadFile(filename)
+	if err != nil {
+		fmt.Println("file open error: " + err.Error())
+	}
+
 	content := string(file)
 
-	id := findFile(args)
+	add := findFile(args)
+	fmt.Println(add, node.Address)
+
+	//if the address maps to itself then there is no need to make a call. Encryption is done
+	if strings.Compare(add, string(node.Address)) == 0 {
+
+		return
+	}
 
 	/*
 		encrypt file locally
+		send it
 
 
 
@@ -217,9 +232,9 @@ func StoreFile(args []string) {
 	*/
 
 	reply := Reply{}
-	arguments := Args{Command: content, Address: filename, Offset: 0}
+	arguments := Args{Command: content, Address: string(node.Address), Filename: filename, Offset: 0}
 
-	ok := call(string(id), "Node.Store", &arguments, &reply)
+	ok := call(string(add), "Node.Store", &arguments, &reply)
 	if !ok {
 		fmt.Println("cano reach the node")
 		return
