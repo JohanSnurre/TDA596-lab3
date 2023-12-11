@@ -2,8 +2,12 @@ package main
 
 import (
 	"crypto/sha1"
+	"fmt"
+	"io"
 	"math"
 	"math/big"
+	"os"
+	"strconv"
 	"sync"
 )
 
@@ -11,22 +15,26 @@ type Key string
 type NodeAddress string
 
 type Node struct {
-	mu          sync.Mutex
+	sync.Mutex
 	Address     NodeAddress
 	FingerTable []NodeAddress
 	Predecessor NodeAddress
 	Successors  []NodeAddress
 
 	Bucket map[Key]string
+
+	encryptionKey string
+
+	PK_A, PK_B int64
 }
 
 func (n *Node) HandlePing(arguments *Args, reply *Reply) error {
-	n.mu.Lock()
+	//n.mu.Lock()
 	//fmt.Println("In HandlePing")
 	if arguments.Command == "CP" {
 		reply.Reply = "CP reply"
 	}
-	n.mu.Unlock()
+	//n.mu.Unlock()
 	return nil
 }
 
@@ -49,9 +57,9 @@ func between(start *big.Int, elt *big.Int, end *big.Int, inclusive bool) bool {
 }
 
 func (n *Node) Get_predecessor(args *Args, reply *Reply) error {
-	n.mu.Lock()
+	//n.mu.Lock()
 	reply.Reply = string(node.Predecessor)
-	n.mu.Unlock()
+	//n.mu.Unlock()
 	return nil
 
 }
@@ -83,14 +91,14 @@ func (n *Node) Find_successor(args *Args, reply *Reply) error {
 		return nil
 	}
 */
-func (n *Node) closest_predecing_node(id *big.Int) NodeAddress {
+func (n *Node) closest_preceding_node(id *big.Int) NodeAddress {
 
 	for i := len(n.FingerTable) - 1; i >= 0; i-- {
 
 		addH := hashAddress(n.Address)
 		fingerH := hashAddress(n.FingerTable[i])
 
-		if between(addH, fingerH, id, false) {
+		if between(addH, fingerH, id, true) {
 			return n.FingerTable[i]
 		}
 
@@ -137,7 +145,7 @@ func (n *Node) getLocalAddress() {
 
 func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 
-	n.mu.Lock()
+	//n.mu.Lock()
 	addH := hashAddress(n.Address)
 
 	ID := hashAddress(NodeAddress(args.Address))
@@ -147,7 +155,7 @@ func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 	succH := hashAddress(NodeAddress(n.Successors[0]))
 
 	//If the ID is between self and immediate successor
-	if between(addH, ID, succH, true) {
+	if between(addH, ID, succH, false) {
 		reply.Found = true
 		reply.Reply = string(n.Successors[0])
 		//reply.Successors = n.Successors
@@ -156,40 +164,40 @@ func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 		//Right now it will return the next successor, jumping only 1 step on the ring. Search time is O(N), we want O(log(N))
 		reply.Found = false
 		reply.Reply = ""
-		reply.Forward = string(n.closest_predecing_node(ID))
+		//reply.Forward = string(n.closest_preceding_node(ID))
 
-		//reply.Forward = string(n.Successors[0])
+		reply.Forward = string(n.Successors[0])
 	}
 
-	n.mu.Unlock()
+	//n.mu.Unlock()
 	return nil
 
 }
 
 func (n *Node) Get_successors(args *Args, reply *Reply) error {
 
-	n.mu.Lock()
+	//n.mu.Lock()
 	reply.Successors = node.Successors
-	n.mu.Unlock()
+	//n.mu.Unlock()
 	return nil
 
 }
 
 func (n *Node) create() {
 
-	n.mu.Lock()
+	//n.mu.Lock()
 	n.Predecessor = ""
 	n.Successors = append(n.Successors, n.Address)
-	n.mu.Unlock()
+	//n.mu.Unlock()
 
 }
 
 func (n *Node) join(address NodeAddress) {
-	n.mu.Lock()
+	//n.mu.Lock()
 	node.Predecessor = ""
 	node.Successors = []NodeAddress{address}
 
-	n.mu.Unlock()
+	//n.mu.Unlock()
 
 }
 
@@ -199,7 +207,7 @@ func (n *Node) stabilize() {
 
 func (n *Node) Notify(args *Args, reply *Reply) error {
 
-	n.mu.Lock()
+	//n.mu.Lock()
 	addH := hashAddress(NodeAddress(args.Address))
 
 	addressH := hashAddress(n.Address)
@@ -212,7 +220,83 @@ func (n *Node) Notify(args *Args, reply *Reply) error {
 	} else {
 		reply.Reply = "Fail"
 	}
-	n.mu.Unlock()
+	//n.mu.Unlock()
+	return nil
+}
+
+func (n *Node) Store(args *Args, reply *Reply) error {
+	filename := args.Address
+	content := []byte(args.Command)
+
+	encTxt, err := EncryptMessage([]byte(n.encryptionKey), string(content))
+
+	err = os.WriteFile(filename, []byte(encTxt), 0777)
+	if err != nil {
+		fmt.Println("problem writing file")
+	}
+
+	return nil
+}
+
+func (n *Node) HandleRequest(args *Args, reply *Reply) error {
+
+	//filename := args.Filename
+	generator = args.Generator
+	prime = args.Prime
+
+	n.PK_B = args.PublicKey
+
+	ret := math.Mod(math.Pow(float64(generator), float64(*SK)), float64(prime))
+	reply.PublicKey = int64(ret)
+
+	return nil
+}
+
+func (n *Node) GetFile(args *Args, reply *Reply) error {
+
+	f, err := os.Open(args.Filename)
+	if err != nil {
+		return nil
+	}
+
+	content, err := io.ReadAll(f)
+	if err != nil {
+		return nil
+	}
+
+	reply.Content = string(content)
+	return nil
+}
+
+func (n *Node) GetKey(args *Args, reply *Reply) error {
+
+	secret := int64(math.Mod(math.Pow(float64(n.PK_B), float64(*SK)), float64(args.Prime)))
+	//fmt.Println("Secret: ", secret)
+
+	secretExt := strconv.FormatInt(secret, 10)
+	for len(secretExt) < 32 {
+		secretExt = secretExt + secretExt
+	}
+	secretExt = secretExt[:32]
+
+	//fmt.Println(secretExt)
+
+	eKey, err := EncryptMessage([]byte(secretExt), n.encryptionKey)
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
+	_, err = DecryptMessage([]byte(secretExt), eKey)
+	if err != nil {
+		fmt.Println("Error decrypting ", err)
+		return nil
+	}
+
+	//fmt.Println(eKey, dKey)
+
+	reply.EncKey = eKey
+
 	return nil
 }
 

@@ -2,8 +2,13 @@ package main
 
 import (
 	"bufio"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net"
@@ -31,6 +36,10 @@ var timeCheckPredecessor *int
 var successorAmount *int
 var identifier *string
 
+var generator int64
+var prime int64
+var SK *int
+
 var FingerTableSize = 10
 
 var m sync.Mutex
@@ -47,6 +56,8 @@ func main() {
 	timeCheckPredecessor = flag.Int("tcp", -1, "Time before check predecessor is called")
 	successorAmount = flag.Int("r", -1, "The amount of immediate successor stored")
 	identifier = flag.String("i", "", "The string identifier of a node")
+	SK = flag.Int("sk", 0, "Secret key")
+	encryptionKey := flag.String("e", "abcdabcdabcdabcdabcdabcdabcdabcd", "Enc key")
 
 	flag.Parse()
 	*address = strings.TrimSpace(*address)
@@ -65,9 +76,13 @@ func main() {
 		fmt.Println("Invalid arguments")
 		return
 	}
+	if len(*encryptionKey) != 32 {
+		fmt.Println("Provide an encryption key of 32 bytes")
+		return
+	}
 
 	add = NodeAddress(*address + localPort)
-	node = &Node{Address: add, Successors: []NodeAddress{}, Predecessor: "", FingerTable: []NodeAddress{}, Bucket: make(map[Key]string)}
+	node = &Node{Address: add, Successors: []NodeAddress{}, Predecessor: "", FingerTable: []NodeAddress{}, Bucket: make(map[Key]string), encryptionKey: *encryptionKey}
 
 	server(*address, ":"+strconv.Itoa(*addressPort))
 
@@ -104,6 +119,7 @@ func main() {
 	//m["create"] = create
 	//m["ping"] = ping
 	m["dump"] = dump
+	m["LookUp"] = LookUp
 	m["StoreFile"] = StoreFile
 	for running {
 
@@ -123,14 +139,27 @@ func main() {
 	return
 }
 
-func StoreFile(args []string) {
+func LookUp(args []string) {
+	add := findFile(args)
+	//fmt.Println(add)
 
+	//Generate a random prime number
+	//Choose a generator for the group of that prime number
+
+	p := int64(67)
+	g := int64(12)
+
+	PK := int64(math.Mod(math.Pow(float64(g), float64(*SK)), float64(p)))
+
+	SendRequest(add, args[1], PK, p, g, 0)
+
+}
+
+func findFile(args []string) string {
 	filename := args[1]
 
-	fmt.Println("file id: ", hashString(filename))
-
 	reply := Reply{}
-	arguments := Args{"", filename, 0}
+	arguments := Args{Command: "", Address: filename, Offset: 0}
 
 	add := node.Address
 	flag := false
@@ -139,7 +168,7 @@ func StoreFile(args []string) {
 		ok := call(string(add), "Node.FindSuccessor", &arguments, &reply)
 		if !ok {
 			fmt.Println("Failed to fix fingers")
-			return
+			return ""
 		}
 		switch found := reply.Found; found {
 
@@ -151,19 +180,50 @@ func StoreFile(args []string) {
 		//if the file maps somewhere else then we have to forward the request to a better node
 		case false:
 			add = NodeAddress(reply.Forward)
-			fmt.Println("next id to check :", hashString(reply.Forward))
 			break
 		}
 
 	}
 
 	//Print out the correct address to store the file in. Dependent on hashString(filename)
-	fmt.Println(reply.Reply)
+	//fmt.Println(reply.Reply)
+	return reply.Reply
+
+}
+
+func StoreFile(args []string) {
+
+	filename := args[1]
+
+	file, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Println("file open error: " + err.Error())
+	}
+
+	content := string(file)
+
+	id := findFile(args)
+
+	/*
+		encrypt file locally
+
+
+
+	*/
 
 	/*
 		Use the address and make an rpc connection to upload the file contents to that node
 
 	*/
+
+	reply := Reply{}
+	arguments := Args{Command: content, Address: filename, Offset: 0}
+
+	ok := call(string(id), "Node.Store", &arguments, &reply)
+	if !ok {
+		fmt.Println("cano reach the node")
+		return
+	}
 
 }
 
@@ -213,8 +273,9 @@ func quit(args []string) {
 }
 
 func cp(args []string) {
-
-	arguments := Args{"CP", string(node.Address), 0}
+	node.Lock()
+	defer node.Unlock()
+	arguments := Args{Command: "CP", Address: string(node.Address), Offset: 0}
 	reply := Reply{}
 
 	if string(node.Predecessor) == "" {
@@ -223,25 +284,27 @@ func cp(args []string) {
 
 	ok := call(string(node.Predecessor), "Node.HandlePing", &arguments, &reply)
 	if !ok {
-		node.mu.Lock()
+		//node.mu.Lock()
 		fmt.Println("Can not connect to predecessor")
 		node.Predecessor = NodeAddress("")
-		node.mu.Unlock()
+		//node.mu.Unlock()
 		return
 	}
 
 }
 
 func fix_fingers() {
+	node.Lock()
+	defer node.Unlock()
 	if len(node.FingerTable) == 0 {
-		node.mu.Lock()
+		//node.mu.Lock()
 		node.FingerTable = []NodeAddress{node.Successors[0]}
-		node.mu.Unlock()
+		//node.mu.Unlock()
 
 		return
 	}
 
-	node.FingerTable = []NodeAddress{}
+	temp := []NodeAddress{}
 	for next := 1; next <= FingerTableSize; next++ {
 		offset := int64(math.Pow(2, float64(next)-1))
 		add := node.Address
@@ -249,7 +312,7 @@ func fix_fingers() {
 		for !flag {
 
 			reply := Reply{}
-			args := Args{"", string(node.Address), offset}
+			args := Args{Command: "", Address: string(node.Address), Offset: offset}
 
 			ok := call(string(add), "Node.FindSuccessor", &args, &reply)
 			if !ok {
@@ -260,11 +323,11 @@ func fix_fingers() {
 
 			switch found := reply.Found; found {
 			case true:
-				node.mu.Lock()
-				node.FingerTable = append(node.FingerTable, NodeAddress(reply.Reply))
+				//node.mu.Lock()
+				temp = append(temp, NodeAddress(reply.Reply))
 				//fmt.Println("SUCC: " + reply.Reply)
 				flag = true
-				node.mu.Unlock()
+				//node.mu.Unlock()
 				break
 			case false:
 				//fmt.Println("FORWARD: " + reply.Forward)
@@ -276,49 +339,53 @@ func fix_fingers() {
 		}
 
 	}
+	node.FingerTable = temp
 
 }
 
 func stabilize(args []string) {
 
-	arguments := Args{"", string(node.Address), 0}
+	node.Lock()
+	defer node.Unlock()
+
+	arguments := Args{Command: "", Address: string(node.Address), Offset: 0}
 	reply := Reply{}
 
 	ok := call(string(node.Successors[0]), "Node.Get_predecessor", &arguments, &reply)
 	if !ok {
 		fmt.Println("Could not connect to successor")
 		dump([]string{})
-		node.mu.Lock()
+		//node.mu.Lock()
 		node.Successors = node.Successors[1:]
-		node.mu.Unlock()
+		//node.mu.Unlock()
 		return
 	}
-	node.mu.Lock()
+	//node.mu.Lock()
 	addH := hashAddress(node.Address)
 	addressH := hashAddress(NodeAddress(reply.Reply))
 	succH := hashAddress(node.Successors[0])
 
-	if between(addH, addressH, succH, false) && reply.Reply != "" {
+	if between(addH, addressH, succH, true) && reply.Reply != "" {
 		node.Successors = []NodeAddress{NodeAddress(reply.Reply)}
 	}
 
-	node.mu.Unlock()
-	arguments = Args{"", string(node.Address), 0}
+	//node.mu.Unlock()
+	arguments = Args{Command: "", Address: string(node.Address), Offset: 0}
 	reply = Reply{}
 	ok = call(string(node.Successors[0]), "Node.Get_successors", &arguments, &reply)
 	if !ok {
 		//fmt.Println("Call failed to successor in stabilize <2>")
 	}
-	node.mu.Lock()
+	//node.mu.Lock()
 	//fmt.Println(reply.Successors)
 	node.Successors = []NodeAddress{node.Successors[0]}
 	node.Successors = append(node.Successors, reply.Successors[:len(reply.Successors)]...)
 	if len(node.Successors) > *successorAmount {
 		node.Successors = node.Successors[:*successorAmount]
 	}
-	node.mu.Unlock()
+	//node.mu.Unlock()
 
-	arguments = Args{"Stabilize", string(node.Address), 0}
+	arguments = Args{Command: "Stabilize", Address: string(node.Address), Offset: 0}
 	reply = Reply{}
 	notify([]string{})
 
@@ -326,7 +393,7 @@ func stabilize(args []string) {
 
 func notify(args []string) {
 
-	arguments := Args{"Notify", string(node.Address), 0}
+	arguments := Args{Command: "Notify", Address: string(node.Address), Offset: 0}
 	reply := Reply{}
 
 	ok := call(string(node.Successors[0]), "Node.Notify", &arguments, &reply)
@@ -363,7 +430,7 @@ func create(args []string) {
 func join(address NodeAddress) {
 
 	reply := Reply{}
-	args := Args{"", string(node.Address), 0}
+	args := Args{Command: "", Address: string(node.Address), Offset: 0}
 
 	add := address
 
@@ -471,4 +538,134 @@ func getLocalAddress() string {
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 
 	return localAddr.IP.String()
+}
+
+func EncryptMessage(key []byte, message string) (string, error) {
+	byteMsg := []byte(message)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("could not create new cipher: %v", err)
+	}
+
+	cipherText := make([]byte, aes.BlockSize+len(byteMsg))
+	iv := cipherText[:aes.BlockSize]
+	if _, err = io.ReadFull(rand.Reader, iv); err != nil {
+		return "", fmt.Errorf("could not encrypt: %v", err)
+	}
+
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(cipherText[aes.BlockSize:], byteMsg)
+
+	return base64.StdEncoding.EncodeToString(cipherText), nil
+}
+
+func EncryptFile(key []byte, filename string, out string) {
+
+	f, err := os.Open(filename)
+	if err != nil {
+
+	}
+
+	content, err := io.ReadAll(f)
+	if err != nil {
+
+	}
+
+	f.Close()
+
+	enc, err := EncryptMessage(key, string(content))
+	if err != nil {
+
+	}
+
+	outFile, err := os.Create(out)
+	if err != nil {
+
+	}
+
+	outFile.Write([]byte(enc))
+
+	outFile.Close()
+
+}
+
+func SendRequest(address string, filename string, PK int64, prime int64, generator int64, s int64) error {
+
+	args := Args{Filename: filename, PublicKey: PK, Prime: prime, Generator: generator}
+	reply := Reply{}
+
+	ok := call(address, "Node.HandleRequest", &args, &reply)
+	if !ok {
+		fmt.Println("Error requesting")
+		return nil
+	}
+
+	secret := int64(math.Mod(math.Pow(float64(reply.PublicKey), float64(*SK)), float64(prime)))
+
+	secretExt := strconv.FormatInt(secret, 10)
+	for len(secretExt) < 32 {
+		secretExt = secretExt + secretExt
+	}
+	secretExt = secretExt[:32]
+
+	args = Args{Filename: filename, PublicKey: PK, Prime: prime, Generator: generator}
+	reply = Reply{}
+
+	ok = call(address, "Node.GetKey", &args, &reply)
+	if !ok {
+		fmt.Println("Error requesting")
+		return nil
+	}
+	//fmt.Println(reply.EncKey)
+
+	dKey, err := DecryptMessage([]byte(secretExt), reply.EncKey)
+	if err != nil {
+		fmt.Println("Error decrypting ", err)
+		return nil
+	}
+
+	args = Args{Filename: filename, PublicKey: PK, Prime: prime, Generator: generator}
+	reply = Reply{}
+
+	ok = call(address, "Node.GetFile", &args, &reply)
+	if !ok {
+		fmt.Println("Error requesting")
+		return nil
+	}
+
+	//fmt.Println(reply.Content)
+
+	text, err := DecryptMessage([]byte(dKey), reply.Content)
+	if err != nil {
+		fmt.Println("Error decrypting ", err)
+		return nil
+
+	}
+	fmt.Println(text)
+	return nil
+
+}
+
+func DecryptMessage(key []byte, message string) (string, error) {
+	cipherText, err := base64.StdEncoding.DecodeString(message)
+	if err != nil {
+		return "", fmt.Errorf("could not base64 decode: %v", err)
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("could not create new cipher: %v", err)
+	}
+
+	if len(cipherText) < aes.BlockSize {
+		return "", fmt.Errorf("invalid ciphertext block size")
+	}
+
+	iv := cipherText[:aes.BlockSize]
+	cipherText = cipherText[aes.BlockSize:]
+
+	stream := cipher.NewCFBDecrypter(block, iv)
+	stream.XORKeyStream(cipherText, cipherText)
+
+	return string(cipherText), nil
 }
