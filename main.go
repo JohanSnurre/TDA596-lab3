@@ -124,6 +124,7 @@ func main() {
 	m["dump"] = dump
 	m["LookUp"] = LookUp
 	m["StoreFile"] = StoreFile
+	m["PrintState"] = PrintState
 	for running {
 
 		fmt.Print("::> ")
@@ -144,7 +145,7 @@ func main() {
 
 func LookUp(args []string) {
 	add := findFile(args)
-	//fmt.Println(add)
+	fmt.Println(hashAddress(NodeAddress(add)), add)
 
 	//Generate a random prime number
 	//Choose a generator for the group of that prime number
@@ -301,8 +302,8 @@ func quit(args []string) {
 }
 
 func cp(args []string) {
-	node.Lock()
-	defer node.Unlock()
+	//node.Lock()
+	//defer node.Unlock()
 	arguments := Args{Command: "CP", Address: string(node.Address), Offset: 0}
 	reply := Reply{}
 
@@ -312,28 +313,33 @@ func cp(args []string) {
 
 	ok := call(string(node.Predecessor), "Node.HandlePing", &arguments, &reply)
 	if !ok {
-		//node.mu.Lock()
+		node.mu.Lock()
 		fmt.Println("Can not connect to predecessor")
 		node.Predecessor = NodeAddress("")
-		//node.mu.Unlock()
+		node.mu.Unlock()
 		return
 	}
 
 }
 
 func fix_fingers() {
-	node.Lock()
-	defer node.Unlock()
+	//node.Lock()
+	//defer node.Unlock()
+
 	if len(node.FingerTable) == 0 {
-		//node.mu.Lock()
+		node.mu.Lock()
+
 		node.FingerTable = []NodeAddress{node.Successors[0]}
-		//node.mu.Unlock()
+		//ode.mu.Unlock()
+		node.mu.Unlock()
 
 		return
 	}
 
 	//temp := []NodeAddress{}
+	node.mu.Lock()
 	node.FingerTable = []NodeAddress{}
+	node.mu.Unlock()
 	for next := 1; next <= FingerTableSize; next++ {
 		offset := int64(math.Pow(2, float64(next)-1))
 		add := node.Address
@@ -347,28 +353,34 @@ func fix_fingers() {
 			if !ok {
 				//node.Successors = node.Successors[1:]
 				fmt.Println("Failed to fix fingers : ")
+
 				return
 			}
 			//fmt.Println(reply.Found)
 
 			switch found := reply.Found; found {
 			case true:
-				//node.mu.Lock()
+				node.mu.Lock()
+
 				node.FingerTable = append(node.FingerTable, NodeAddress(reply.Reply))
 				//fmt.Println("SUCC: "+reply.Reply, "Offset: ", offset)
 				flag = true
-				//node.mu.Unlock()
+				node.mu.Unlock()
+
 				break
 			case false:
 
 				if strings.Compare(reply.Forward, string(node.Address)) == 0 {
+					node.mu.Lock()
 					flag = true
 					node.FingerTable = append(node.FingerTable, NodeAddress(reply.Forward))
+					node.mu.Unlock()
+
 					break
 				}
 
 				add = NodeAddress(reply.Forward)
-				fmt.Println("FORWARD: " + add)
+				//fmt.Println("FORWARD: " + add)
 				break
 
 			}
@@ -376,31 +388,32 @@ func fix_fingers() {
 		}
 
 	}
+	//node.mu.Unlock()
 
 }
 
 func stabilize(args []string) {
 
-	node.Lock()
-	defer node.Unlock()
+	//node.Lock()
+	//defer node.Unlock()
 
 	arguments := Args{Command: "", Address: string(node.Address), Offset: 0}
 	reply := Reply{}
 
-	dump([]string{})
+	//dump([]string{})
 	ok := call(string(node.Successors[0]), "Node.Get_predecessor", &arguments, &reply)
 	if !ok {
 		fmt.Println("Could not connect to successor")
 		dump([]string{})
-		//node.mu.Lock()
+		node.mu.Lock()
 		node.Successors = node.Successors[1:]
 		if len(node.Successors) == 0 {
 			node.Successors = []NodeAddress{node.Address}
 		}
-		//node.mu.Unlock()
+		node.mu.Unlock()
 		return
 	}
-	//node.mu.Lock()
+	node.mu.Lock()
 	addH := hashAddress(node.Address)
 	addressH := hashAddress(NodeAddress(reply.Reply))
 	succH := hashAddress(node.Successors[0])
@@ -409,21 +422,21 @@ func stabilize(args []string) {
 		node.Successors = []NodeAddress{NodeAddress(reply.Reply)}
 	}
 
-	//node.mu.Unlock()
+	node.mu.Unlock()
 	arguments = Args{Command: "", Address: string(node.Address), Offset: 0}
 	reply = Reply{}
 	ok = call(string(node.Successors[0]), "Node.Get_successors", &arguments, &reply)
 	if !ok {
 		//fmt.Println("Call failed to successor in stabilize <2>")
 	}
-	//node.mu.Lock()
+	node.mu.Lock()
 	//fmt.Println(reply.Successors)
 	node.Successors = []NodeAddress{node.Successors[0]}
 	node.Successors = append(node.Successors, reply.Successors...)
 	if len(node.Successors) > *successorAmount {
 		node.Successors = node.Successors[:*successorAmount]
 	}
-	//node.mu.Unlock()
+	node.mu.Unlock()
 
 	arguments = Args{Command: "Stabilize", Address: string(node.Address), Offset: 0}
 	reply = Reply{}
@@ -715,4 +728,23 @@ func DecryptMessage(key []byte, message string) (string, error) {
 	stream.XORKeyStream(cipherText, cipherText)
 
 	return string(cipherText), nil
+}
+
+func PrintState(args []string) {
+
+	fmt.Println("OWN INFORMATION: ")
+	fmt.Println(node.Address, hashAddress(node.Address))
+
+	fmt.Println("PREDECESSOR: ")
+	fmt.Println(node.Predecessor, hashAddress(node.Predecessor))
+
+	fmt.Println("SUCCESSORS:")
+	for _, s := range node.Successors {
+		fmt.Println(s, hashAddress(s))
+	}
+
+	fmt.Println("FINGER TABLE:")
+	for _, f := range node.FingerTable {
+		fmt.Println(f, hashAddress(f))
+	}
 }

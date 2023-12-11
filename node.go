@@ -15,7 +15,7 @@ type Key string
 type NodeAddress string
 
 type Node struct {
-	sync.Mutex
+	mu          sync.Mutex
 	Address     NodeAddress
 	FingerTable []NodeAddress
 	Predecessor NodeAddress
@@ -29,12 +29,12 @@ type Node struct {
 }
 
 func (n *Node) HandlePing(arguments *Args, reply *Reply) error {
-	//n.mu.Lock()
+	n.mu.Lock()
 	//fmt.Println("In HandlePing")
 	if arguments.Command == "CP" {
 		reply.Reply = "CP reply"
 	}
-	//n.mu.Unlock()
+	n.mu.Unlock()
 	return nil
 }
 
@@ -57,9 +57,9 @@ func between(start *big.Int, elt *big.Int, end *big.Int, inclusive bool) bool {
 }
 
 func (n *Node) Get_predecessor(args *Args, reply *Reply) error {
-	//n.mu.Lock()
+	n.mu.Lock()
 	reply.Reply = string(node.Predecessor)
-	//n.mu.Unlock()
+	n.mu.Unlock()
 	return nil
 
 }
@@ -67,7 +67,7 @@ func (n *Node) Get_predecessor(args *Args, reply *Reply) error {
 /*
 func (n *Node) Find_successor(args *Args, reply *Reply) error {
 
-		n.mu.Lock()
+		//n.mu.Lock()
 		addressH := hashAddress(NodeAddress(args.Address))
 
 		addressH = addressH.Add(addressH, big.NewInt(args.Offset))
@@ -87,7 +87,7 @@ func (n *Node) Find_successor(args *Args, reply *Reply) error {
 			//fmt.Println(reply.Reply)
 		}
 
-		n.mu.Unlock()
+		//n.mu.Unlock()
 		return nil
 	}
 */
@@ -96,6 +96,7 @@ func (n *Node) closest_preceding_node(id *big.Int) NodeAddress {
 	for i := len(n.FingerTable) - 1; i >= 0; i-- {
 
 		addH := hashAddress(n.Address)
+		//fmt.Println("FINGER TABLE: ", n.FingerTable)
 		fingerH := hashAddress(n.FingerTable[i])
 
 		if between(addH, fingerH, id, true) {
@@ -163,7 +164,7 @@ func (n *Node) getLocalAddress() {
 
 func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 
-	//n.mu.Lock()
+	n.mu.Lock()
 	addH := hashAddress(n.Address)
 
 	ID := hashAddress(NodeAddress(args.Address))
@@ -200,35 +201,35 @@ func (n *Node) FindSuccessor(args *Args, reply *Reply) error {
 		//reply.Forward = string(n.test(ID))
 	}
 
-	//n.mu.Unlock()
+	n.mu.Unlock()
 	return nil
 
 }
 
 func (n *Node) Get_successors(args *Args, reply *Reply) error {
 
-	//n.mu.Lock()
+	n.mu.Lock()
 	reply.Successors = node.Successors
-	//n.mu.Unlock()
+	n.mu.Unlock()
 	return nil
 
 }
 
 func (n *Node) create() {
 
-	//n.mu.Lock()
+	n.mu.Lock()
 	n.Predecessor = ""
 	n.Successors = append(n.Successors, n.Address)
-	//n.mu.Unlock()
+	n.mu.Unlock()
 
 }
 
 func (n *Node) join(address NodeAddress) {
-	//n.mu.Lock()
+	n.mu.Lock()
 	node.Predecessor = ""
 	node.Successors = []NodeAddress{address}
 
-	//n.mu.Unlock()
+	n.mu.Unlock()
 
 }
 
@@ -238,7 +239,7 @@ func (n *Node) stabilize() {
 
 func (n *Node) Notify(args *Args, reply *Reply) error {
 
-	//n.mu.Lock()
+	n.mu.Lock()
 	addH := hashAddress(NodeAddress(args.Address))
 
 	addressH := hashAddress(n.Address)
@@ -251,7 +252,7 @@ func (n *Node) Notify(args *Args, reply *Reply) error {
 	} else {
 		reply.Reply = "Fail"
 	}
-	//n.mu.Unlock()
+	n.mu.Unlock()
 	return nil
 }
 
