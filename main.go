@@ -2,8 +2,13 @@ package main
 
 import (
 	"bufio"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net"
@@ -36,6 +41,11 @@ var FingerTableSize = 10
 var m sync.Mutex
 var connections = make(map[string]*rpc.Client)
 
+var prime int64 = 479
+var generator int64 = 13
+var SK *int
+var secretKey *string
+
 func main() {
 
 	address = flag.String("a", "", "Address")
@@ -47,14 +57,14 @@ func main() {
 	timeCheckPredecessor = flag.Int("tcp", -1, "Time before check predecessor is called")
 	successorAmount = flag.Int("r", -1, "The amount of immediate successor stored")
 	identifier = flag.String("i", "", "The string identifier of a node")
+	SK = flag.Int("sk", 0, "Key")
+	secretKey = flag.String("e", "", "end key")
 
 	flag.Parse()
 	*address = strings.TrimSpace(*address)
 	*joinAddress = strings.TrimSpace(*joinAddress)
 	*identifier = strings.TrimSpace(*identifier)
 	localPort = ":" + strconv.Itoa(*addressPort)
-
-	//fmt.Printf("%s, %d", *joinAddress, *joinPort)
 
 	if (len(*joinAddress) == 0 && *joinPort >= 0) || (len(*joinAddress) > 0 && *joinPort < 0) {
 		fmt.Printf("You have to provide both -ja and -jp flags")
@@ -100,13 +110,11 @@ func main() {
 	m := make(map[string]func([]string))
 	m["help"] = help
 	m["quit"] = quit
-	//m["port"] = port
-	//m["create"] = create
-	//m["ping"] = ping
 	m["dump"] = dump
 	m["StoreFile"] = StoreFile
 	m["LookUp"] = LookUp
 	m["PrintState"] = PrintState
+	m["a"] = a
 	for running {
 
 		fmt.Print("::> ")
@@ -123,6 +131,13 @@ func main() {
 	}
 
 	return
+}
+
+func a(args []string) {
+	aa := []string{}
+	aa = append(aa, "StoreFile")
+	aa = append(aa, "a")
+	StoreFile(aa)
 }
 
 func LookUp(args []string) {
@@ -170,8 +185,8 @@ func findFile(args []string) string {
 }
 
 func StoreFile(args []string) {
-
 	filename := args[1]
+	dest := findFile(args)
 
 	file, err := os.ReadFile(filename)
 	if err != nil {
@@ -180,22 +195,166 @@ func StoreFile(args []string) {
 
 	content := string(file)
 
-	id := findFile(args)
+	enc, err := EncryptMessage([]byte(*secretKey), content)
+	if err != nil {
+		fmt.Println("Error encrypting: " + err.Error())
 
-	/*
-		Use the address and make an rpc connection to upload the file contents to that node
+	}
 
-	*/
+	reply := FReply{}
+	arguments := FArgs{string(add), filename, enc}
 
-	reply := Reply{}
-	arguments := Args{content, filename, 0}
-
-	ok := call(string(id), "Node.Store", &arguments, &reply)
+	ok := call(string(dest), "Node.Store", &arguments, &reply)
 	if !ok {
 		fmt.Println("cano reach the node")
 		return
 	}
 
+}
+
+func HandleKeys(filename string, dest string) string {
+	PK := int64(math.Mod(math.Pow(float64(generator), float64(*SK)), float64(prime)))
+
+	args := KArgs{filename, PK, prime, generator, 0}
+	reply := KReply{}
+
+	ok := call(dest, "Node.HandleRequest", &args, &reply)
+	if !ok {
+		fmt.Println("Error requesting")
+		return ""
+	}
+
+	secret := int64(math.Mod(math.Pow(float64(reply.PublicKey), float64(*SK)), float64(prime)))
+
+	secretExt := strconv.FormatInt(secret, 10)
+	for len(secretExt) < 32 {
+		secretExt = secretExt + secretExt
+	}
+	secretExt = secretExt[:32]
+
+	ok = call(dest, "Node.GetKey", &args, &reply)
+	if !ok {
+		fmt.Println("Error requesting")
+		return ""
+	}
+	fmt.Println(reply.EncKey)
+
+	dKey, err := DecryptMessage([]byte(secretExt), reply.EncKey)
+	if err != nil {
+		fmt.Println("Error decrypting ", err)
+		return ""
+	}
+
+	return dKey
+
+}
+
+func SendRequest(address string, filename string, PK int64, prime int64, generator int64, s int64) error {
+
+	args := KArgs{filename, PK, prime, generator, s}
+	reply := KReply{}
+	fmt.Println("GENERATOR: ", generator)
+	fmt.Println("PRIME: ", prime)
+
+	ok := call(address, "Node.HandleRequest", &args, &reply)
+	if !ok {
+		fmt.Println("Error requesting")
+		return nil
+	}
+
+	secret := int64(math.Mod(math.Pow(float64(reply.PublicKey), float64(*SK)), float64(prime)))
+	fmt.Println("PK_A: ", reply.PublicKey)
+	fmt.Println("PK_A: ", *SK)
+	fmt.Println("PK_A: ", prime)
+	fmt.Println("Secret: ", secret)
+
+	secretExt := strconv.FormatInt(secret, 10)
+	for len(secretExt) < 32 {
+		secretExt = secretExt + secretExt
+	}
+	secretExt = secretExt[:32]
+
+	args = KArgs{filename, PK, prime, generator, s}
+	reply = KReply{}
+
+	ok = call(address, "Node.GetKey", &args, &reply)
+	if !ok {
+		fmt.Println("Error requesting")
+		return nil
+	}
+	fmt.Println(reply.EncKey)
+
+	dKey, err := DecryptMessage([]byte(secretExt), reply.EncKey)
+	if err != nil {
+		fmt.Println("Error decrypting ", err)
+		return nil
+	}
+
+	fmt.Println(dKey)
+
+	args = KArgs{filename, PK, prime, generator, s}
+	reply = KReply{}
+
+	ok = call(address, "Node.GetFile", &args, &reply)
+	if !ok {
+		fmt.Println("Error requesting")
+		return nil
+	}
+
+	text, err := DecryptMessage([]byte(dKey), reply.Content)
+	if err != nil {
+		fmt.Println("Error decrypting ", err)
+		return nil
+
+	}
+
+	fmt.Println("decrypted?")
+	fmt.Println(text)
+	return nil
+
+}
+
+func EncryptMessage(key []byte, message string) (string, error) {
+	byteMsg := []byte(message)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("could not create new cipher: %v", err)
+	}
+
+	cipherText := make([]byte, aes.BlockSize+len(byteMsg))
+	iv := cipherText[:aes.BlockSize]
+	if _, err = io.ReadFull(rand.Reader, iv); err != nil {
+		return "", fmt.Errorf("could not encrypt: %v", err)
+	}
+
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(cipherText[aes.BlockSize:], byteMsg)
+
+	return base64.StdEncoding.EncodeToString(cipherText), nil
+}
+
+func DecryptMessage(key []byte, message string) (string, error) {
+	cipherText, err := base64.StdEncoding.DecodeString(message)
+	if err != nil {
+		return "", fmt.Errorf("could not base64 decode: %v", err)
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("could not create new cipher: %v", err)
+	}
+
+	if len(cipherText) < aes.BlockSize {
+		return "", fmt.Errorf("invalid ciphertext block size")
+	}
+
+	iv := cipherText[:aes.BlockSize]
+	cipherText = cipherText[aes.BlockSize:]
+
+	stream := cipher.NewCFBDecrypter(block, iv)
+	stream.XORKeyStream(cipherText, cipherText)
+
+	return string(cipherText), nil
 }
 
 func PrintState(args []string) {

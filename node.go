@@ -3,9 +3,11 @@ package main
 import (
 	"crypto/sha1"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -18,6 +20,9 @@ type Node struct {
 	FingerTable []NodeAddress
 	Predecessor NodeAddress
 	Successors  []NodeAddress
+	PK_A, PK_B  int64
+
+	currentKey int64
 
 	Bucket map[Key]string
 }
@@ -25,23 +30,12 @@ type Node struct {
 func (n *Node) HandlePing(arguments *Args, reply *Reply) error {
 	n.mu.Lock()
 	//fmt.Println("In HandlePing")
-	if arguments.Offset == 69 {
-		fmt.Println("good ping")
-	}
 	if arguments.Command == "CP" {
 		reply.Reply = "CP reply"
 	}
 	n.mu.Unlock()
 	return nil
 }
-
-/*func NewNode(Address string) *Node {
-
-	node := Node{NodeAddress(Address), []NodeAddress{}, "", []NodeAddress{}, make(map[Key]string)}
-
-	return &node
-
-}*/
 
 func between(start *big.Int, elt *big.Int, end *big.Int, inclusive bool) bool {
 
@@ -68,33 +62,6 @@ func (n *Node) GetNodeInfo(args *Args, reply *Reply) error {
 	return nil
 }
 
-/*
-func (n *Node) Find_successor(args *Args, reply *Reply) error {
-
-		n.mu.Lock()
-		addressH := hashAddress(NodeAddress(args.Address))
-
-		addressH = addressH.Add(addressH, big.NewInt(args.Offset))
-
-		found, address := n.findSuccessor(addressH)
-
-		if found {
-			reply.Found = true
-			reply.Reply = string(address)
-			reply.Successors = n.Successors
-			//fmt.Println(n.Successors)
-			reply.Forward = ""
-		} else {
-			reply.Found = false
-			reply.Reply = ""
-			reply.Forward = string(n.Successors[0])
-			//fmt.Println(reply.Reply)
-		}
-
-		n.mu.Unlock()
-		return nil
-	}
-*/
 func (n *Node) closest_predecing_node(id *big.Int) NodeAddress {
 
 	for i := len(n.FingerTable) - 1; i >= 0; i-- {
@@ -132,18 +99,6 @@ func hashString(elt string) *big.Int {
 
 	return new(big.Int).Mod(t, big.NewInt(int64(1024)))
 	//return new(big.Int).SetBytes(hasher.Sum(nil))
-
-}
-
-func (n *Node) jump() {
-
-}
-
-func (n *Node) between() {
-
-}
-
-func (n *Node) getLocalAddress() {
 
 }
 
@@ -205,10 +160,6 @@ func (n *Node) join(address NodeAddress) {
 
 }
 
-func (n *Node) stabilize() {
-
-}
-
 func (n *Node) Notify(args *Args, reply *Reply) error {
 
 	n.mu.Lock()
@@ -228,15 +179,24 @@ func (n *Node) Notify(args *Args, reply *Reply) error {
 	return nil
 }
 
-func (n *Node) checkPredecessor() {
+func (n *Node) Store(args *FArgs, reply *FReply) error {
+	fmt.Println("=================")
+	content := args.Content
+	org := args.Address
+	filename := args.Filename + org + "ii"
 
-}
+	k := HandleKeys(filename, org)
+	if k == "" {
+		fmt.Println("key oopsie")
+		return nil
+	}
 
-func (n *Node) Store(args *Args, reply *Reply) error {
-	filename := args.Address
-	content := []byte(args.Command)
+	dec, err := DecryptMessage([]byte(k), string(content))
+	if err != nil {
+		fmt.Println("errroror: ", err.Error())
+	}
 
-	err := os.WriteFile(filename, content, 0777)
+	err = os.WriteFile(filename, []byte(dec), 0777)
 	if err != nil {
 		fmt.Println("problem writing file")
 	}
@@ -244,10 +204,67 @@ func (n *Node) Store(args *Args, reply *Reply) error {
 	return nil
 }
 
-func run() {
+func (n *Node) HandleRequest(args *KArgs, reply *KReply) error {
 
-	//start an RPC server over http
-	// define request and reply structs
-	// handle requests appropriatley
+	//filename := args.Filename
+	// generator = args.Generator
+	// prime = args.Prime
 
+	n.PK_B = args.PublicKey
+	// fmt.Println("PK_B: ", n.PK_B)
+
+	ret := math.Mod(math.Pow(float64(generator), float64(*SK)), float64(prime))
+	fmt.Println("PK: ", ret)
+
+	reply.PublicKey = int64(ret)
+
+	return nil
+}
+
+func (n *Node) GetKey(args *KArgs, reply *KReply) error {
+
+	secret := int64(math.Mod(math.Pow(float64(n.PK_B), float64(*SK)), float64(args.Prime)))
+	fmt.Println("Secret: ", secret)
+
+	secretExt := strconv.FormatInt(secret, 10)
+	for len(secretExt) < 32 {
+		secretExt = secretExt + secretExt
+	}
+	secretExt = secretExt[:32]
+
+	//fmt.Println(secretExt)
+
+	eKey, err := EncryptMessage([]byte(secretExt), *secretKey)
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
+	// dKey, err := DecryptMessage([]byte(secretExt), eKey)
+	// if err != nil {
+	// 	fmt.Println("Error decrypting ", err)
+	// 	return nil
+	// }
+
+	// fmt.Println(eKey, dKey)
+
+	reply.EncKey = eKey
+
+	return nil
+}
+
+func (n *Node) GetFile(args *KArgs, reply *KReply) error {
+
+	f, err := os.Open(args.Filename)
+	if err != nil {
+		return nil
+	}
+
+	content, err := io.ReadAll(f)
+	if err != nil {
+		return nil
+	}
+
+	reply.Content = string(content)
+	return nil
 }

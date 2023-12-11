@@ -22,3 +22,26 @@ type s struct {
 type r struct {
 	Address NodeAddress
 }
+
+type FArgs struct {
+	Address  string
+	Filename string
+	Content  string
+}
+
+type FReply struct {
+}
+
+type KArgs struct {
+	Filename  string
+	PublicKey int64
+	Prime     int64
+	Generator int64
+	Secret    int64
+}
+
+type KReply struct {
+	Content   string
+	PublicKey int64
+	EncKey    string
+}
